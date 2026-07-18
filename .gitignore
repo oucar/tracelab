@@ -1,0 +1,40 @@
+# ── Local planning docs (working notes, not part of the public repo) ──
+tracelab-plan.md
+MILESTONES.md
+NOTES.md
+.claude/
+
+# ── Environment / secrets ──
+.env
+.env.*
+!.env.example
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# ── Node / frontend ──
+node_modules/
+frontend/dist/
+frontend/.vite/
+*.tsbuildinfo
+
+# ── App data (runtime artifacts, never committed) ──
+backend/data/
+*.sqlite3
+*.db
+
+# ── OS / editor ──
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
