@@ -316,3 +316,8 @@ def test_sandbox_is_injectable_through_deps(dataset):
     final = execute_run(make_state(dataset, "run-fakebox"), deps)
     assert executed == ["print('never runs')"]
     assert final.analyst_results[0].iterations[0].result.stdout == "CANNED OUTPUT"
+
+
+def test_plan_step_accepts_m3_methods():
+    for method in ("regression", "clustering", "timeseries_backtest", "anomaly_detection"):
+        assert PlanStep(description="x", method=method).method == method

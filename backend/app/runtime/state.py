@@ -51,7 +51,15 @@ class Claim(BaseModel):
 class PlanStep(BaseModel):
     id: int = 0
     description: str
-    method: Literal["descriptive", "mean_comparison", "correlation"] = "descriptive"
+    method: Literal[
+        "descriptive",
+        "mean_comparison",
+        "correlation",
+        "regression",
+        "clustering",
+        "timeseries_backtest",
+        "anomaly_detection",
+    ] = "descriptive"
 
 
 class Plan(BaseModel):
