@@ -9,18 +9,30 @@ const AGENT_COLORS: Record<string, "default" | "primary" | "secondary" | "warnin
   composer: "success",
 };
 
+const step = (e: AgentEvent) =>
+  e.payload.step_id !== undefined ? `[step ${e.payload.step_id}] ` : "";
+
 function summary(e: AgentEvent): string {
   switch (e.type) {
     case "run_started":
       return `run started — "${String(e.payload.question ?? "")}"`;
     case "llm_call":
+      if (e.payload.plan !== undefined)
+        return `planned ${(e.payload.plan as unknown[]).length} step(s)`;
+      if (e.payload.answer !== undefined) return "composed final answer";
       return e.payload.action === "run_code"
-        ? `iteration ${e.payload.iteration}: decided to run code`
-        : e.payload.answer !== undefined
-          ? "composed final answer"
-          : `iteration ${e.payload.iteration}: finished analysis`;
+        ? `${step(e)}iteration ${e.payload.iteration}: decided to run code`
+        : `${step(e)}iteration ${e.payload.iteration}: finished analysis`;
     case "tool_call":
-      return `sandbox exec (exit=${e.payload.exit_code}${e.payload.timed_out ? ", TIMED OUT" : ""})`;
+      return `${step(e)}sandbox exec (exit=${e.payload.exit_code}${e.payload.timed_out ? ", TIMED OUT" : ""})`;
+    case "verdict":
+      return `${e.payload.status} — claim ${e.payload.claim_id}${
+        e.payload.reason ? ` (${e.payload.reason})` : ""
+      }`;
+    case "handoff":
+      return e.payload.retry_steps !== undefined
+        ? `retry → step(s) ${(e.payload.retry_steps as number[]).join(", ")}`
+        : `fan-out → ${(e.payload.steps as number[]).length} analyst(s)`;
     case "run_finished":
       return "run finished";
     case "error":
