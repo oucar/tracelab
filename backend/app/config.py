@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     alpha: float = 0.05
     max_tokens_per_agent: int = 24_000
 
+    # M3 — observability.
+    daily_budget_usd: float = 2.0  # hard cap on real-run spend per UTC day
+
     db_path: Path = DATA_DIR / "tracelab.sqlite3"
     checkpoints_db_path: Path = DATA_DIR / "checkpoints.sqlite3"
     uploads_dir: Path = DATA_DIR / "uploads"

@@ -10,9 +10,16 @@ import json
 import sqlite3
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 from app.runtime.events import AgentEvent
+
+
+def utc_midnight() -> float:
+    """Start of the current UTC day as a unix timestamp — the budget window."""
+    now = datetime.now(timezone.utc)
+    return datetime(now.year, now.month, now.day, tzinfo=timezone.utc).timestamp()
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -159,3 +166,11 @@ class Store:
             d["payload"] = json.loads(d["payload"])
             out.append(d)
         return out
+
+    def cost_since(self, since_ts: float) -> float:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT COALESCE(SUM(cost_usd), 0) AS c FROM spans WHERE started_at >= ?",
+                (since_ts,),
+            ).fetchone()
+        return float(row["c"])
