@@ -9,10 +9,12 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
+from app.agents.llm import GraphDeps
 from app.config import settings
 from app.deps import store
 from app.runtime.events import EventType, bus
 from app.runtime.graph import execute_run
+from app.runtime.recording import Recorder, recording_deps
 from app.runtime.state import RunState
 from app.tracing.store import utc_midnight
 
@@ -24,8 +26,10 @@ class AskRequest(BaseModel):
     question: str
 
 
-def _execute(run_id: str, dataset: dict, question: str) -> None:
-    """Runs in a worker thread; persists every event, then finalizes the run row."""
+def _execute(run_id: str, dataset: dict, question: str, deps: GraphDeps | None = None) -> None:
+    """Runs in a worker thread; recording on for real runs, off for replays."""
+    if deps is None:
+        deps = recording_deps(GraphDeps.default(), Recorder(store(), run_id))
     state = RunState(
         run_id=run_id,
         question=question,
@@ -33,7 +37,7 @@ def _execute(run_id: str, dataset: dict, question: str) -> None:
         dataset_profile=dataset["profile"],
     )
     try:
-        final = execute_run(state)
+        final = execute_run(state, deps)
         result = final.final.model_dump_json() if final.final else ""
         store().finish_run(run_id, final.final_answer, "finished", result)
     except Exception as exc:
