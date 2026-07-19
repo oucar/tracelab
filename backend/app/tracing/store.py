@@ -51,6 +51,14 @@ CREATE TABLE IF NOT EXISTS datasets (
     profile TEXT NOT NULL,
     created_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS recordings (
+    run_id TEXT NOT NULL REFERENCES runs(id),
+    key TEXT NOT NULL,          -- sha256 of the request content (role + messages / code)
+    seq INTEGER NOT NULL,       -- per-key ordinal: identical requests replay in order
+    kind TEXT NOT NULL,         -- 'llm' | 'sandbox'
+    response TEXT NOT NULL,     -- JSON: recorded output + usage
+    PRIMARY KEY (run_id, key, seq)
+);
 CREATE INDEX IF NOT EXISTS idx_spans_run ON spans(run_id, started_at);
 """
 
@@ -174,3 +182,23 @@ class Store:
                 (since_ts,),
             ).fetchone()
         return float(row["c"])
+
+    # ── recordings (deterministic replay) ─────────────────────────────────
+    def add_recording(self, run_id: str, key: str, seq: int, kind: str, response: dict) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO recordings VALUES (?, ?, ?, ?, ?)",
+                (run_id, key, seq, kind, json.dumps(response)),
+            )
+
+    def recordings_for_run(self, run_id: str) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM recordings WHERE run_id = ? ORDER BY key, seq", (run_id,)
+            ).fetchall()
+        out = []
+        for row in rows:
+            d = dict(row)
+            d["response"] = json.loads(d["response"])
+            out.append(d)
+        return out
