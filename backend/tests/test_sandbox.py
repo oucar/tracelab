@@ -60,3 +60,11 @@ def test_no_api_keys_in_environment(dataset):
         "import os\nprint('KEY' if os.environ.get('OPENAI_API_KEY') else 'CLEAN')", dataset
     )
     assert "CLEAN" in result.stdout
+
+
+def test_stats_libraries_are_importable_in_sandbox(dataset):
+    result = run_code(
+        "import statsmodels.api, sklearn.cluster, sklearn.decomposition\nprint('stats ok')",
+        str(dataset),
+    )
+    assert result.exit_code == 0 and "stats ok" in result.stdout

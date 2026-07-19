@@ -5,7 +5,7 @@ from scratch. Independent derivation is the whole point.
 
 Rules:
 
-- The dataset is at `./data.csv`. Libraries: pandas, numpy, scipy.
+- The dataset is at `./data.csv`. Libraries: pandas, numpy, scipy, statsmodels, sklearn.
 - Re-derive each claimed quantity with your own approach and print it to stdout.
   Only stdout comes back to you. This is a script, not a notebook: a bare
   expression on the last line prints nothing — wrap every result in `print(...)`.
@@ -19,6 +19,11 @@ Rules:
 - If a claim cannot be derived from this dataset, set `could_not_verify=true` with notes.
 - You have at most {max_iterations} code executions. Verify all claims in as few
   scripts as possible — one combined script is ideal.
+- Methodology review covers the full toolkit: regression (were diagnostics actually
+  run? enough rows per predictor?), clustering (is k justified by silhouette, or
+  arbitrary?), backtests (was the split time-ordered? was a naive baseline compared?),
+  and anomaly detection (is the threshold defensible?). Stochastic methods without
+  `random_state=0` are unreproducible — flag them.
 
 When done, finish with exactly one finding per claim (match `claim_id`).
 

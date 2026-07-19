@@ -7,7 +7,7 @@ Method: {method}
 Rules:
 
 - The dataset is at `./data.csv`. Load it with pandas.
-- Libraries available: pandas, numpy, scipy.
+- Libraries available: pandas, numpy, scipy, statsmodels, sklearn.
 - Print every finding you rely on to stdout. Only stdout comes back to you.
 - This is a script, not a notebook: a bare expression on the last line prints
   nothing. Wrap every result in `print(...)`.
@@ -15,6 +15,8 @@ Rules:
 - Round presented floats sensibly, but compute at full precision.
 - You have at most {max_iterations} code executions. One well-planned script beats
   three exploratory ones.
+- Set `random_state=0` on every stochastic method (KMeans, IsolationForest,
+  sampling). The critic must be able to reproduce your numbers exactly.
 
 Method playbooks (follow the one for your assigned method):
 
@@ -30,6 +32,30 @@ Method playbooks (follow the one for your assigned method):
   with p-value (`scipy.stats.pearsonr`); if the relationship is monotonic but not linear
   or outlier-driven, use Spearman instead and say why. Effect size is the coefficient
   itself. Conclude significance at alpha = {alpha}.
+- `regression`: OLS via statsmodels (`sm.add_constant`, `sm.OLS(...).fit()`). Report n,
+  each coefficient with its p-value, R² and adjusted R². Diagnostics are mandatory,
+  not optional: residual normality (shapiro on ≤5000 residuals, else skewness),
+  heteroscedasticity (`statsmodels.stats.diagnostic.het_breuschpagan`), and
+  multicollinearity (VIF; flag predictors with VIF > 10) — list what passed and
+  failed in the methodology assumptions. The key statistical claim is the main
+  predictor's direction and significance at alpha = {alpha}; effect size is
+  adjusted R² (name it "adjusted R²").
+- `clustering`: standardize numeric columns (`sklearn.preprocessing.StandardScaler`).
+  Choose k in 2..6 by silhouette score (`sklearn.metrics.silhouette_score`), then
+  `KMeans(n_clusters=k, n_init=10, random_state=0)`. Report chosen k, silhouette,
+  cluster sizes, and per-cluster means of the most distinguishing columns (numeric
+  claims). Chart: PCA 2-component scatter (`sklearn.decomposition.PCA`) of ≤500
+  sampled rows with a "cluster" field as a categorical series.
+- `timeseries_backtest`: sort by the time column; hold out the final ~20% of rows.
+  Baseline = naive last-value (or seasonal-naive when an obvious period exists).
+  Model = rolling mean or `statsmodels.tsa.holtwinters.ExponentialSmoothing`.
+  Report MAE and MAPE for model AND baseline on the holdout (numeric claims). A
+  model that cannot beat the naive baseline must be reported as exactly that —
+  "does not beat naive" is a valid, honest finding.
+- `anomaly_detection`: robust z-score (median/MAD) or IQR fences per numeric column;
+  for multivariate anomalies use `sklearn.ensemble.IsolationForest(random_state=0)`.
+  Report the anomaly count, the share of rows (numeric claims), and the top 5 most
+  anomalous rows with the columns that make them anomalous in the findings text.
 
 Charts: if a chart genuinely helps answer the step, write a JSON file to
 `./artifacts/chart_<name>.json` with EXACTLY this shape:
