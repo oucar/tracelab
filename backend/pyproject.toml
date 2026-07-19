@@ -19,6 +19,7 @@ dependencies = [
     "sse-starlette>=2.1",
     "statsmodels>=0.14",
     "scikit-learn>=1.5",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
