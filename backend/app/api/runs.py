@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -31,7 +32,8 @@ def _execute(run_id: str, dataset: dict, question: str) -> None:
     )
     try:
         final = execute_run(state)
-        store().finish_run(run_id, final.final_answer, "finished")
+        result = final.final.model_dump_json() if final.final else ""
+        store().finish_run(run_id, final.final_answer, "finished", result)
     except Exception as exc:
         store().finish_run(run_id, f"error: {exc}", "error")
     finally:
@@ -77,4 +79,5 @@ def get_run(run_id: str) -> dict:
     run = store().get_run(run_id)
     if run is None:
         raise HTTPException(404, "run not found")
+    run["result"] = json.loads(run["result"]) if run.get("result") else None
     return {**run, "spans": store().spans_for_run(run_id)}

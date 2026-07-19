@@ -25,3 +25,36 @@ def test_run_lifecycle_and_spans(tmp_path):
     assert run["status"] == "finished" and run["answer"] == "the mean is 4"
     spans = store.spans_for_run(run_id)
     assert len(spans) == 1 and spans[0]["payload"] == {"i": 1}
+
+
+def test_finish_run_persists_structured_result(tmp_path):
+    store = Store(tmp_path / "t.sqlite3")
+    ds = store.add_dataset("d", "/tmp/d.csv", {"rows": 1})
+    run_id = store.create_run(ds, "q")
+    store.finish_run(
+        run_id, "answer", "finished", result='{"narrative": "answer", "failed": false}'
+    )
+    run = store.get_run(run_id)
+    assert run["result"] == '{"narrative": "answer", "failed": false}'
+
+
+def test_existing_database_is_migrated_with_result_column(tmp_path):
+    import sqlite3
+
+    db = tmp_path / "old.sqlite3"
+    conn = sqlite3.connect(db)
+    conn.executescript(
+        """
+        CREATE TABLE runs (
+            id TEXT PRIMARY KEY, dataset_id TEXT NOT NULL, question TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'running', answer TEXT DEFAULT '',
+            created_at REAL NOT NULL
+        );
+        INSERT INTO runs VALUES ('r1', 'd1', 'q', 'finished', 'a', 0);
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    store = Store(db)  # must migrate, not crash
+    assert store.get_run("r1")["result"] == ""
