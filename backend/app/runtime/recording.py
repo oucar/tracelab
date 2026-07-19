@@ -17,6 +17,7 @@ from collections import defaultdict
 from langchain_core.messages import BaseMessage
 
 from app.agents.llm import GraphDeps, LLMUsage
+from app.agents.schemas import AnalystTurn, CriticTurn, PlannerTurn
 from app.runtime.state import SandboxResult
 from app.tracing.store import Store
 
@@ -81,6 +82,59 @@ def recording_deps(inner: GraphDeps, recorder: Recorder) -> GraphDeps:
         planner=structured("planner", inner.planner),
         analyst_turn=structured("analyst", inner.analyst_turn),
         critic_turn=structured("critic", inner.critic_turn),
+        compose=compose,
+        run_code=run_code,
+    )
+
+
+class ReplayMiss(Exception):
+    """A replayed run issued a request that was never recorded."""
+
+    def __init__(self, kind: str, key: str) -> None:
+        super().__init__(
+            f"replay miss: no recorded {kind} response for request {key[:12]}… — "
+            "the replayed graph diverged from the original run"
+        )
+
+
+def replay_deps(recordings: list[dict]) -> GraphDeps:
+    """GraphDeps that answer every request from recordings. Fully offline."""
+
+    buckets: dict[str, list[dict]] = defaultdict(list)
+    for row in sorted(recordings, key=lambda r: r["seq"]):
+        buckets[row["key"]].append(row["response"])
+    lock = threading.Lock()
+
+    def pop(kind: str, key: str) -> dict:
+        with lock:
+            bucket = buckets.get(key)
+            if not bucket:
+                raise ReplayMiss(kind, key)
+            return bucket.pop(0)
+
+    def replay_usage(rec: dict) -> LLMUsage:
+        usage = rec.get("usage", {})
+        # model="replay" is deliberately unpriced: replays keep tokens, cost $0
+        return LLMUsage(usage.get("tokens_in", 0), usage.get("tokens_out", 0), model="replay")
+
+    def structured(role: str, schema):
+        def call(messages):
+            rec = pop("llm", request_key(role, messages))
+            return schema.model_validate(rec["turn"]), replay_usage(rec)
+
+        return call
+
+    def compose(messages):
+        rec = pop("llm", request_key("composer", messages))
+        return rec["text"], replay_usage(rec)
+
+    def run_code(code: str, dataset_path: str) -> SandboxResult:
+        return SandboxResult.model_validate(pop("sandbox", sandbox_key(code)))
+
+    return GraphDeps(
+        planner=structured("planner", PlannerTurn),
+        analyst_turn=structured("analyst", AnalystTurn),
+        critic_turn=structured("critic", CriticTurn),
         compose=compose,
         run_code=run_code,
     )
