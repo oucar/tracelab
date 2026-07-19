@@ -7,7 +7,7 @@ questions:
   - aggregation
   expected:
     kind: numeric
-    value: 730.0
+    value: 730
     tolerance: 0.0
     direction: ''
     significant: null
@@ -42,7 +42,7 @@ questions:
   - dates
   expected:
     kind: numeric
-    value: 8.0
+    value: 8
     tolerance: 0.0
     direction: ''
     significant: null
@@ -54,7 +54,7 @@ questions:
   - filter
   expected:
     kind: numeric
-    value: 93.0
+    value: 93
     tolerance: 0.0
     direction: ''
     significant: null

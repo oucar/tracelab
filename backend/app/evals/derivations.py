@@ -219,9 +219,9 @@ def _weather_avg_wind(df: pd.DataFrame) -> GoldenExpected:
 
 
 # --- writer -------------------------------------------------------------
-def derive_all() -> dict[str, GoldenExpected]:
+def derive_all(golden_dir: Path = GOLDEN_DIR) -> dict[str, GoldenExpected]:
     out: dict[str, GoldenExpected] = {}
-    for s in load_golden(GOLDEN_DIR):
+    for s in load_golden(golden_dir):
         df = pd.read_csv(REPO_ROOT / s.csv)
         for q in s.questions:
             if q.id in DERIVATIONS:
@@ -232,7 +232,7 @@ def derive_all() -> dict[str, GoldenExpected]:
 
 
 def write_golden(golden_dir: Path = GOLDEN_DIR) -> None:
-    derived = derive_all()
+    derived = derive_all(golden_dir)
     for path in sorted(golden_dir.glob("*.yaml")):
         raw = yaml.safe_load(path.read_text())
         for q in raw["questions"]:
