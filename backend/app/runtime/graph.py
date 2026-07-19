@@ -477,7 +477,18 @@ def execute_run(state: RunState, deps: GraphDeps | None = None) -> RunState:
         )
     )
     try:
-        final = build_graph(deps).invoke(state)
+        # Local imports keep unit tests (which call build_graph directly) off the
+        # checkpoint DB; SqliteSaver checkpoints every superstep under thread_id=run_id.
+        import sqlite3
+
+        from langgraph.checkpoint.sqlite import SqliteSaver
+
+        conn = sqlite3.connect(str(settings().checkpoints_db_path), check_same_thread=False)
+        try:
+            graph = build_graph(deps, checkpointer=SqliteSaver(conn))
+            final = graph.invoke(state, {"configurable": {"thread_id": state.run_id}})
+        finally:
+            conn.close()
         final_state = RunState.model_validate(final)
         _emit(
             final_state.run_id,
