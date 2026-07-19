@@ -1,47 +1,126 @@
 name: weather
 csv: data/samples/weather.csv
 questions:
-  - id: weather-001
-    question: "How many daily observations are in the dataset?"
-    tags: [aggregation]
-    expected: {kind: numeric, value: null, tolerance: 0.0}
-  - id: weather-002
-    question: "What was the highest temperature recorded?"
-    tags: [aggregation]
-    expected: {kind: numeric, value: null, tolerance: 0.01}
-  - id: weather-003
-    question: "What is the mean temperature over the whole period?"
-    tags: [aggregation]
-    expected: {kind: numeric, value: null, tolerance: 0.02}
-  - id: weather-004
-    question: "Which weather condition occurs most often?"
-    tags: [aggregation, groupby]
-    expected: {kind: categorical, value: null}
-  - id: weather-005
-    question: "Is there a significant correlation between temperature and humidity?"
-    tags: [stats, correlation]
-    expected: {kind: statistical, direction: "", significant: null, method_family: correlation}
-  - id: weather-006
-    question: "Is it significantly windier on rain days than on sunny days?"
-    tags: [stats, hypothesis-testing]
-    expected: {kind: statistical, direction: "", significant: null, method_family: mean-comparison}
-  - id: weather-007
-    question: "How many days had precipitation above 10 mm?"
-    tags: [aggregation, filter]
-    expected: {kind: numeric, value: null, tolerance: 0.0}
-  - id: weather-008
-    question: "Does humidity significantly predict precipitation?"
-    tags: [stats, regression]
-    expected: {kind: statistical, direction: "", significant: null, method_family: regression}
-  - id: weather-009
-    question: "What was the average temperature in July 2024?"
-    tags: [aggregation, dates]
-    expected: {kind: numeric, value: null, tolerance: 0.02}
-  - id: weather-010
-    question: "What is the average wind speed?"
-    tags: [aggregation]
-    expected: {kind: numeric, value: null, tolerance: 0.02}
-  - id: weather-011
-    question: "Are there any anomalous temperature readings? Describe them."
-    tags: [narrative, anomaly]
-    expected: {kind: narrative}
+- id: weather-001
+  question: How many daily observations are in the dataset?
+  tags:
+  - aggregation
+  expected:
+    kind: numeric
+    value: 730.0
+    tolerance: 0.0
+    direction: ''
+    significant: null
+    method_family: ''
+- id: weather-002
+  question: What was the highest temperature recorded?
+  tags:
+  - aggregation
+  expected:
+    kind: numeric
+    value: 28.8
+    tolerance: 0.01
+    direction: ''
+    significant: null
+    method_family: ''
+- id: weather-003
+  question: What is the mean temperature over the whole period?
+  tags:
+  - aggregation
+  expected:
+    kind: numeric
+    value: 11.8151
+    tolerance: 0.02
+    direction: ''
+    significant: null
+    method_family: ''
+- id: weather-004
+  question: Which weather condition occurs most often?
+  tags:
+  - aggregation
+  - groupby
+  expected:
+    kind: categorical
+    value: sunny
+    tolerance: 0.0
+    direction: ''
+    significant: null
+    method_family: ''
+- id: weather-005
+  question: Is there a significant correlation between temperature and humidity?
+  tags:
+  - stats
+  - correlation
+  expected:
+    kind: statistical
+    value: null
+    tolerance: 0.0
+    direction: lower
+    significant: true
+    method_family: correlation
+- id: weather-006
+  question: Is it significantly windier on rain days than on sunny days?
+  tags:
+  - stats
+  - hypothesis-testing
+  expected:
+    kind: statistical
+    value: null
+    tolerance: 0.0
+    direction: higher
+    significant: false
+    method_family: mean-comparison
+- id: weather-007
+  question: How many days had precipitation above 10 mm?
+  tags:
+  - aggregation
+  - filter
+  expected:
+    kind: numeric
+    value: 18.0
+    tolerance: 0.0
+    direction: ''
+    significant: null
+    method_family: ''
+- id: weather-008
+  question: Does humidity significantly predict precipitation?
+  tags:
+  - stats
+  - regression
+  expected:
+    kind: statistical
+    value: null
+    tolerance: 0.0
+    direction: higher
+    significant: true
+    method_family: regression
+- id: weather-009
+  question: What was the average temperature in July 2024?
+  tags:
+  - aggregation
+  - dates
+  expected:
+    kind: numeric
+    value: 21.1032
+    tolerance: 0.02
+    direction: ''
+    significant: null
+    method_family: ''
+- id: weather-010
+  question: What is the average wind speed?
+  tags:
+  - aggregation
+  expected:
+    kind: numeric
+    value: 14.0286
+    tolerance: 0.02
+    direction: ''
+    significant: null
+    method_family: ''
+- id: weather-011
+  question: Are there any anomalous temperature readings? Describe them.
+  tags:
+  - narrative
+  - anomaly
+  expected:
+    kind: narrative

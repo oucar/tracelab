@@ -1,47 +1,125 @@
 name: taxi
 csv: data/samples/taxi_trips.csv
 questions:
-  - id: taxi-001
-    question: "How many trips are in the dataset?"
-    tags: [aggregation]
-    expected: {kind: numeric, value: null, tolerance: 0.0}
-  - id: taxi-002
-    question: "What is the average fare?"
-    tags: [aggregation]
-    expected: {kind: numeric, value: null, tolerance: 0.02}
-  - id: taxi-003
-    question: "Which pickup hour (0-23) has the highest average fare?"
-    tags: [aggregation, groupby]
-    expected: {kind: numeric, value: null, tolerance: 0.0}
-  - id: taxi-004
-    question: "Which day of the week has the most trips?"
-    tags: [aggregation, groupby]
-    expected: {kind: categorical, value: null}
-  - id: taxi-005
-    question: "What is the maximum trip distance in km?"
-    tags: [aggregation]
-    expected: {kind: numeric, value: null, tolerance: 0.0}
-  - id: taxi-006
-    question: "How many trips were paid in cash?"
-    tags: [aggregation, filter]
-    expected: {kind: numeric, value: null, tolerance: 0.0}
-  - id: taxi-007
-    question: "Is the average fare significantly higher on weekends than on weekdays?"
-    tags: [stats, hypothesis-testing]
-    expected: {kind: statistical, direction: "", significant: null, method_family: mean-comparison}
-  - id: taxi-008
-    question: "Is there a significant correlation between trip distance and fare?"
-    tags: [stats, correlation]
-    expected: {kind: statistical, direction: "", significant: null, method_family: correlation}
-  - id: taxi-009
-    question: "Do card-paying passengers tip significantly more than cash-paying passengers?"
-    tags: [stats, hypothesis-testing]
-    expected: {kind: statistical, direction: "", significant: null, method_family: mean-comparison}
-  - id: taxi-010
-    question: "What is the median fare?"
-    tags: [aggregation]
-    expected: {kind: numeric, value: null, tolerance: 0.02}
-  - id: taxi-011
-    question: "Summarize the main drivers of fare in this dataset."
-    tags: [narrative]
-    expected: {kind: narrative}
+- id: taxi-001
+  question: How many trips are in the dataset?
+  tags:
+  - aggregation
+  expected:
+    kind: numeric
+    value: 900.0
+    tolerance: 0.0
+    direction: ''
+    significant: null
+    method_family: ''
+- id: taxi-002
+  question: What is the average fare?
+  tags:
+  - aggregation
+  expected:
+    kind: numeric
+    value: 11.7762
+    tolerance: 0.02
+    direction: ''
+    significant: null
+    method_family: ''
+- id: taxi-003
+  question: Which pickup hour (0-23) has the highest average fare?
+  tags:
+  - aggregation
+  - groupby
+  expected:
+    kind: numeric
+    value: 1.0
+    tolerance: 0.0
+    direction: ''
+    significant: null
+    method_family: ''
+- id: taxi-004
+  question: Which day of the week has the most trips?
+  tags:
+  - aggregation
+  - groupby
+  expected:
+    kind: categorical
+    value: Wed
+    tolerance: 0.0
+    direction: ''
+    significant: null
+    method_family: ''
+- id: taxi-005
+  question: What is the maximum trip distance in km?
+  tags:
+  - aggregation
+  expected:
+    kind: numeric
+    value: 14.92
+    tolerance: 0.0
+    direction: ''
+    significant: null
+    method_family: ''
+- id: taxi-006
+  question: How many trips were paid in cash?
+  tags:
+  - aggregation
+  - filter
+  expected:
+    kind: numeric
+    value: 260.0
+    tolerance: 0.0
+    direction: ''
+    significant: null
+    method_family: ''
+- id: taxi-007
+  question: Is the average fare significantly higher on weekends than on weekdays?
+  tags:
+  - stats
+  - hypothesis-testing
+  expected:
+    kind: statistical
+    value: null
+    tolerance: 0.0
+    direction: higher
+    significant: true
+    method_family: mean-comparison
+- id: taxi-008
+  question: Is there a significant correlation between trip distance and fare?
+  tags:
+  - stats
+  - correlation
+  expected:
+    kind: statistical
+    value: null
+    tolerance: 0.0
+    direction: higher
+    significant: true
+    method_family: correlation
+- id: taxi-009
+  question: Do card-paying passengers tip significantly more than cash-paying passengers?
+  tags:
+  - stats
+  - hypothesis-testing
+  expected:
+    kind: statistical
+    value: null
+    tolerance: 0.0
+    direction: higher
+    significant: true
+    method_family: mean-comparison
+- id: taxi-010
+  question: What is the median fare?
+  tags:
+  - aggregation
+  expected:
+    kind: numeric
+    value: 10.945
+    tolerance: 0.02
+    direction: ''
+    significant: null
+    method_family: ''
+- id: taxi-011
+  question: Summarize the main drivers of fare in this dataset.
+  tags:
+  - narrative
+  expected:
+    kind: narrative
