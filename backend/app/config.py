@@ -22,20 +22,37 @@ class Settings(BaseSettings):
 
     # Budgets — hard stops, not suggestions.
     max_analyst_iterations: int = 3
-    sandbox_timeout_seconds: int = 20
+    sandbox_timeout_seconds: int = 30  # cold scipy imports under parallel load need headroom
     sandbox_memory_mb: int = 1024
     sandbox_cpu_seconds: int = 15
     max_upload_mb: int = 25
 
+    # M2 — planning, verification, budgets.
+    planner_model: str = "gpt-4o-mini"
+    critic_model: str = "gpt-4o-mini"
+    max_plan_steps: int = 4
+    max_retries: int = 1  # bounded retry after a critic discrepancy
+    max_critic_iterations: int = 3  # critic sandbox executions
+    numeric_rel_tolerance: float = 0.01
+    alpha: float = 0.05
+    max_tokens_per_agent: int = 24_000
+
+    # M3 — observability.
+    daily_budget_usd: float = 2.0  # hard cap on real-run spend per UTC day
+
     db_path: Path = DATA_DIR / "tracelab.sqlite3"
+    checkpoints_db_path: Path = DATA_DIR / "checkpoints.sqlite3"
     uploads_dir: Path = DATA_DIR / "uploads"
 
     def model_for(self, role: str) -> str:
         if self.cheap_mode:
             return self.analyst_model
-        return {"analyst": self.analyst_model, "composer": self.composer_model}.get(
-            role, self.analyst_model
-        )
+        return {
+            "planner": self.planner_model,
+            "analyst": self.analyst_model,
+            "critic": self.critic_model,
+            "composer": self.composer_model,
+        }.get(role, self.analyst_model)
 
 
 @lru_cache

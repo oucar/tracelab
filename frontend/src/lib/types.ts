@@ -43,3 +43,36 @@ export interface Dataset {
   name: string;
   profile: DatasetProfile;
 }
+
+export interface Methodology {
+  method: string;
+  n: number;
+  p_value: number | null;
+  effect_size: number | null;
+  effect_size_name: string;
+  assumptions: string[];
+}
+
+export interface Claim {
+  id: string;
+  step_id: number;
+  text: string;
+  kind: "numeric" | "categorical" | "statistical";
+  value: number | string | null;
+  direction: "higher" | "lower" | "none" | null;
+  significant: boolean | null;
+  methodology: Methodology | null;
+}
+
+export interface VerifiedClaim {
+  claim: Claim;
+  status: "verified" | "unverified";
+  detail: string;
+}
+
+export interface FinalAnswer {
+  narrative: string;
+  claims: VerifiedClaim[];
+  charts: unknown[]; // validated at render time by the Zod chartSpecSchema
+  failed: boolean;
+}
