@@ -219,3 +219,64 @@ def test_events_flow_for_all_agents(dataset):
     assert types[0] == "run_started" and types[-1] == "run_finished"
     assert "verdict" in types and "handoff" in types
     assert any(e.tokens_in > 0 for e in events)  # usage flows onto events
+
+
+def test_span_tree_is_rooted_and_connected(dataset):
+    from app.runtime.events import EventType, bus
+
+    deps = GraphDeps(
+        planner=two_step_planner,
+        analyst_turn=finishing_analyst(
+            {
+                1: ("A", [Claim(text="total fare", kind="numeric", value=60.0)]),
+                2: ("B", [Claim(text="busiest day", kind="categorical", value="Sat")]),
+            }
+        ),
+        critic_turn=verifying_critic,
+        compose=lambda m: ("done", U),
+    )
+    execute_run(make_state(dataset, "run-tree"), deps)
+    events = bus.history("run-tree")
+
+    ids = {e.span_id for e in events}
+    roots = [e for e in events if e.parent_span_id is None]
+    assert len(roots) == 1 and roots[0].type == EventType.RUN_STARTED
+    # every non-root event points at a span that exists in the same run
+    assert all(e.parent_span_id in ids for e in events if e.parent_span_id is not None)
+    # planner's llm_call is a direct child of the run root
+    planner_call = next(e for e in events if e.agent == "planner" and e.type == EventType.LLM_CALL)
+    assert planner_call.parent_span_id == roots[0].span_id
+
+
+def test_analyst_iterations_nest_under_branch_root(dataset):
+    from app.runtime.events import bus
+
+    calls = {"n": 0}
+
+    def analyst(messages):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return AnalystTurn(action="run_code", code="print('x')"), U
+        return (
+            AnalystTurn(
+                action="finish",
+                findings="F",
+                claims=[Claim(text="t", kind="numeric", value=1.0)],
+            ),
+            U,
+        )
+
+    deps = GraphDeps(
+        planner=lambda m: (PlannerTurn(steps=[PlanStep(description="one step")]), U),
+        analyst_turn=analyst,
+        critic_turn=verifying_critic,
+        compose=lambda m: ("done", U),
+    )
+    execute_run(make_state(dataset, "run-nest"), deps)
+    events = bus.history("run-nest")
+
+    analyst_events = [e for e in events if e.agent == "analyst"]
+    branch_root = analyst_events[0]
+    root = next(e for e in events if e.parent_span_id is None)
+    assert branch_root.parent_span_id == root.span_id
+    assert all(e.parent_span_id == branch_root.span_id for e in analyst_events[1:])

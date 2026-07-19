@@ -100,6 +100,7 @@ class AnalystTask(BaseModel):
     question: str
     dataset_path: str
     dataset_profile: dict[str, Any] = Field(default_factory=dict)
+    root_span_id: str = ""  # Send payloads don't see RunState; the tree root rides along
     step: PlanStep
     critic_feedback: str = ""
 
@@ -111,6 +112,7 @@ class RunState(BaseModel):
     question: str
     dataset_path: str
     dataset_profile: dict[str, Any] = Field(default_factory=dict)
+    root_span_id: str = ""  # span_id of the run_started event; parents the whole tree
 
     plan: Plan | None = None
     planner_failed: bool = False

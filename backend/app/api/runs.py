@@ -36,9 +36,6 @@ def _execute(run_id: str, dataset: dict, question: str) -> None:
         store().finish_run(run_id, final.final_answer, "finished", result)
     except Exception as exc:
         store().finish_run(run_id, f"error: {exc}", "error")
-    finally:
-        for event in bus.history(run_id):
-            store().add_span(event)
 
 
 @router.post("")
