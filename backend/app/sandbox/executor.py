@@ -31,13 +31,21 @@ MAX_OUTPUT_CHARS = 20_000
 
 _PRELUDE = """
 import resource, os
-resource.setrlimit(resource.RLIMIT_CPU, ({cpu}, {cpu}))
-resource.setrlimit(resource.RLIMIT_AS, ({mem}, {mem}))
-resource.setrlimit(resource.RLIMIT_FSIZE, (50_000_000, 50_000_000))
-try:
-    resource.setrlimit(resource.RLIMIT_NPROC, (64, 64))
-except (ValueError, OSError):
-    pass  # not permitted in some environments (e.g. containers); other limits still hold
+def _limit(kind, value):
+    # Best-effort: clamp to the hard limit and skip what the OS refuses
+    # (macOS rejects RLIMIT_AS outright; containers restrict RLIMIT_NPROC).
+    try:
+        _, hard = resource.getrlimit(kind)
+        if hard != resource.RLIM_INFINITY:
+            value = min(value, hard)
+        resource.setrlimit(kind, (value, hard))
+    except (ValueError, OSError):
+        pass
+_limit(resource.RLIMIT_CPU, {cpu})
+_limit(resource.RLIMIT_AS, {mem})
+_limit(resource.RLIMIT_FSIZE, 50_000_000)
+_limit(resource.RLIMIT_NPROC, 64)
+del _limit
 os.makedirs("artifacts", exist_ok=True)
 """
 
