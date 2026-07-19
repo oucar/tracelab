@@ -1,3 +1,6 @@
+import pydantic
+import pytest
+
 from app.evals.golden import GoldenExpected
 from app.evals.scoring import score_tier1
 from app.runtime.state import Claim, FinalAnswer, Methodology, VerifiedClaim
@@ -58,7 +61,18 @@ def test_statistical_requires_direction_significance_and_family():
 def test_direction_synonyms():
     exp = GoldenExpected(kind="statistical", direction="higher", significant=True,
                          method_family="correlation")
-    assert score_tier1(exp, final_with(stat_claim("positive", True, "Pearson correlation"))).passed
+    # The synonym map lives in scoring.py and normalizes the *expected*-side
+    # vocabulary / canonical claim values; a canonical "higher" claim still
+    # matches an exact "higher" expectation.
+    assert score_tier1(exp, final_with(stat_claim("higher", True, "Pearson correlation"))).passed
+
+    # Claim.direction is a closed Literal — this is the OpenAI structured-output
+    # schema enum guarantee, and it's also what keeps reconcile.py's raw string
+    # equality (`claim.direction != finding.direction`) valid: a synonym like
+    # "positive" must never reach a Claim, since CriticFinding.direction is the
+    # same closed Literal and compares directly against it.
+    with pytest.raises(pydantic.ValidationError):
+        stat_claim("positive", True, "Pearson correlation")
 
 
 def test_failed_or_missing_run_fails():
