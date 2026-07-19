@@ -58,3 +58,18 @@ def test_existing_database_is_migrated_with_result_column(tmp_path):
 
     store = Store(db)  # must migrate, not crash
     assert store.get_run("r1")["result"] == ""
+
+
+def test_cost_since_sums_span_costs(tmp_path):
+    store = Store(tmp_path / "t.db")
+    ds = store.add_dataset("d", "/tmp/d.csv", {})
+    run_id = store.create_run(ds, "q")
+    for cost, ts in [(0.5, 100.0), (0.25, 200.0), (1.0, 50.0)]:
+        store.add_span(
+            AgentEvent(
+                run_id=run_id, agent="analyst", type=EventType.LLM_CALL,
+                cost_usd=cost, started_at=ts,
+            )
+        )
+    assert store.cost_since(60.0) == 0.75  # the ts=50 span is before the window
+    assert store.cost_since(0.0) == 1.75

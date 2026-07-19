@@ -9,10 +9,12 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
+from app.config import settings
 from app.deps import store
 from app.runtime.events import EventType, bus
 from app.runtime.graph import execute_run
 from app.runtime.state import RunState
+from app.tracing.store import utc_midnight
 
 router = APIRouter(prefix="/api/runs", tags=["runs"])
 
@@ -45,6 +47,13 @@ async def create_run(req: AskRequest) -> dict:
         raise HTTPException(404, "dataset not found")
     if not req.question.strip():
         raise HTTPException(400, "question is empty")
+    cfg = settings()
+    spent = store().cost_since(utc_midnight())
+    if spent >= cfg.daily_budget_usd:
+        raise HTTPException(
+            429,
+            f"daily budget of ${cfg.daily_budget_usd:.2f} exhausted (${spent:.2f} spent today)",
+        )
     run_id = store().create_run(req.dataset_id, req.question.strip())
     asyncio.get_running_loop().run_in_executor(
         None, _execute, run_id, dataset, req.question.strip()
