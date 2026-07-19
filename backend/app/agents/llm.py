@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from app.agents.schemas import AnalystTurn, CriticTurn, PlannerTurn
 from app.config import settings
+from app.runtime.state import SandboxResult
 
 
 @dataclass(frozen=True)
@@ -104,6 +105,7 @@ PlannerFn = Callable[[list[BaseMessage]], tuple[PlannerTurn, LLMUsage]]
 AnalystFn = Callable[[list[BaseMessage]], tuple[AnalystTurn, LLMUsage]]
 CriticFn = Callable[[list[BaseMessage]], tuple[CriticTurn, LLMUsage]]
 ComposeFn = Callable[[list[BaseMessage]], tuple[str, LLMUsage]]
+SandboxFn = Callable[[str, str], SandboxResult]
 
 
 @dataclass
@@ -114,6 +116,13 @@ class GraphDeps:
     analyst_turn: AnalystFn
     critic_turn: CriticFn
     compose: ComposeFn
+    run_code: SandboxFn | None = None
+
+    def __post_init__(self) -> None:
+        if self.run_code is None:
+            from app.sandbox.executor import run_code
+
+            self.run_code = run_code
 
     @classmethod
     def default(cls) -> "GraphDeps":

@@ -280,3 +280,39 @@ def test_analyst_iterations_nest_under_branch_root(dataset):
     root = next(e for e in events if e.parent_span_id is None)
     assert branch_root.parent_span_id == root.span_id
     assert all(e.parent_span_id == branch_root.span_id for e in analyst_events[1:])
+
+
+def test_sandbox_is_injectable_through_deps(dataset):
+    from app.runtime.state import SandboxResult
+
+    executed: list[str] = []
+
+    def fake_run_code(code: str, dataset_path: str) -> SandboxResult:
+        executed.append(code)
+        return SandboxResult(code=code, stdout="CANNED OUTPUT", exit_code=0)
+
+    calls = {"n": 0}
+
+    def analyst(messages):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return AnalystTurn(action="run_code", code="print('never runs')"), U
+        assert "CANNED OUTPUT" in messages[-1].content  # the fake result came back
+        return (
+            AnalystTurn(
+                action="finish", findings="F",
+                claims=[Claim(text="t", kind="numeric", value=1.0)],
+            ),
+            U,
+        )
+
+    deps = GraphDeps(
+        planner=lambda m: (PlannerTurn(steps=[PlanStep(description="s")]), U),
+        analyst_turn=analyst,
+        critic_turn=verifying_critic,
+        compose=lambda m: ("done", U),
+        run_code=fake_run_code,
+    )
+    final = execute_run(make_state(dataset, "run-fakebox"), deps)
+    assert executed == ["print('never runs')"]
+    assert final.analyst_results[0].iterations[0].result.stdout == "CANNED OUTPUT"
