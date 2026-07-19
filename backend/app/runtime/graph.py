@@ -26,6 +26,7 @@ from app.config import settings
 from app.runtime.budget import AgentBudget, BudgetExceeded
 from app.runtime.chartspec import ChartSpec, extract_chart_specs
 from app.runtime.events import AgentEvent, EventType, bus
+from app.tracing import pricing
 from app.runtime.reconcile import reconcile_claims
 from app.runtime.state import (
     AnalysisStep,
@@ -63,6 +64,9 @@ def _emit(
             payload=payload,
             tokens_in=usage.tokens_in if usage else 0,
             tokens_out=usage.tokens_out if usage else 0,
+            cost_usd=pricing.cost_usd(usage.model, usage.tokens_in, usage.tokens_out)
+            if usage
+            else 0.0,
             started_at=started,
             duration_ms=int((time.time() - started) * 1000),
         )

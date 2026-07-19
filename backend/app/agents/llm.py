@@ -22,6 +22,7 @@ from app.config import settings
 class LLMUsage:
     tokens_in: int = 0
     tokens_out: int = 0
+    model: str = ""  # attached by _usage_of; "" for stubs → cost 0
 
 
 class MalformedOutputError(Exception):
@@ -34,7 +35,12 @@ class MalformedOutputError(Exception):
 
 def _usage_of(raw: object) -> LLMUsage:
     meta = getattr(raw, "usage_metadata", None) or {}
-    return LLMUsage(tokens_in=meta.get("input_tokens", 0), tokens_out=meta.get("output_tokens", 0))
+    resp = getattr(raw, "response_metadata", None) or {}
+    return LLMUsage(
+        tokens_in=meta.get("input_tokens", 0),
+        tokens_out=meta.get("output_tokens", 0),
+        model=resp.get("model_name", ""),
+    )
 
 
 def invoke_structured(
@@ -58,7 +64,11 @@ def invoke_structured(
     ]
     out = structured_invoke(repair)
     second = _usage_of(out["raw"])
-    usage = LLMUsage(usage.tokens_in + second.tokens_in, usage.tokens_out + second.tokens_out)
+    usage = LLMUsage(
+        usage.tokens_in + second.tokens_in,
+        usage.tokens_out + second.tokens_out,
+        model=usage.model or second.model,
+    )
     if out["parsed"] is None:
         raise MalformedOutputError(role, str(out["parsing_error"]))
     return out["parsed"], usage
