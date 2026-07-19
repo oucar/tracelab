@@ -148,3 +148,62 @@ def test_list_runs_with_stats_rolls_up_cost_latency_quality(tmp_path):
 
     empty = next(r for r in rows if r["id"] == empty_run)
     assert empty["cost_usd"] == 0 and empty["duration_ms"] == 0 and empty["claims_total"] == 0
+
+
+def test_eval_run_roundtrip(tmp_path):
+    st = Store(tmp_path / "t.db")
+    st.add_eval_run(
+        id="ev1",
+        created_at=1000.0,
+        label="baseline",
+        git_sha="abc1234",
+        config_hash="deadbeef",
+        config_json='{"analyst": "gpt-4o-mini"}',
+        questions_total=33,
+        tier1_scorable=30,
+        tier1_passed=27,
+        judge_avg=4.1,
+        cost_usd=0.42,
+        duration_ms=120_000,
+    )
+    st.add_eval_result(
+        eval_run_id="ev1",
+        question_id="taxi-001",
+        run_id="r1",
+        dataset="taxi",
+        tags_json='["aggregation"]',
+        tier1_scorable=True,
+        tier1_passed=True,
+        tier1_detail="matched",
+        judge_json=None,
+        judge_rationale="",
+        cost_usd=0.01,
+        duration_ms=3000,
+    )
+    runs = st.list_eval_runs()
+    assert len(runs) == 1 and runs[0]["id"] == "ev1"
+    assert runs[0]["tier1_passed"] == 27 and runs[0]["judge_avg"] == 4.1
+    rows = st.eval_results("ev1")
+    assert len(rows) == 1
+    assert rows[0]["question_id"] == "taxi-001" and rows[0]["tier1_passed"] == 1
+    assert rows[0]["judge"] is None
+
+
+def test_eval_runs_ordered_newest_first(tmp_path):
+    st = Store(tmp_path / "t.db")
+    for i, ts in enumerate([100.0, 300.0, 200.0]):
+        st.add_eval_run(
+            id=f"ev{i}",
+            created_at=ts,
+            label="",
+            git_sha="",
+            config_hash="",
+            config_json="{}",
+            questions_total=0,
+            tier1_scorable=0,
+            tier1_passed=0,
+            judge_avg=None,
+            cost_usd=0,
+            duration_ms=0,
+        )
+    assert [r["id"] for r in st.list_eval_runs()] == ["ev1", "ev2", "ev0"]
