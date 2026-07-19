@@ -43,7 +43,7 @@ class Claim(BaseModel):
     text: str
     kind: Literal["numeric", "categorical", "statistical"]
     value: float | str | None = None  # numeric value or category label
-    direction: str | None = None  # statistical only; can be "higher"/"lower"/"none" or synonyms
+    direction: Literal["higher", "lower", "none"] | None = None  # statistical only
     significant: bool | None = None  # statistical only, at alpha
     methodology: Methodology | None = None
 
