@@ -47,6 +47,14 @@ def test_collects_json_artifacts(dataset):
     assert result.artifacts and result.artifacts[0]["data"]["kind"] == "bar"
 
 
+def test_literal_escaped_newlines_are_normalized(dataset):
+    # Structured output sometimes delivers the whole script on one line with
+    # literal \n escapes; the executor must unescape that corruption.
+    result = run_code("print('a')\\nprint('b')", dataset)
+    assert result.exit_code == 0
+    assert "a\nb" in result.stdout
+
+
 def test_no_api_keys_in_environment(dataset):
     result = run_code(
         "import os\nprint('KEY' if os.environ.get('OPENAI_API_KEY') else 'CLEAN')", dataset

@@ -12,6 +12,7 @@ import {
 } from "@mui/material";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
+import { AnswerPanel } from "../components/AnswerPanel";
 import { DatasetPanel } from "../components/DatasetPanel";
 import { EventLog } from "../components/EventLog";
 import { useRunStream } from "../hooks/useRunStream";
@@ -23,7 +24,7 @@ export function Workbench() {
   const [dataset, setDataset] = useState<Dataset | null>(null);
   const [question, setQuestion] = useState("");
 
-  const { runId, status, events, answer, error, start } = useRunStore();
+  const { runId, status, events, answer, final, error, start } = useRunStore();
   useRunStream(runId);
 
   const upload = useMutation({ mutationFn: uploadDataset, onSuccess: setDataset });
@@ -92,7 +93,8 @@ export function Workbench() {
                 </Typography>
               </Stack>
             )}
-            {status === "finished" && <Alert severity="success">{answer}</Alert>}
+            {status === "finished" &&
+              (final ? <AnswerPanel final={final} /> : <Alert severity="success">{answer}</Alert>)}
             {status === "error" && <Alert severity="error">{error}</Alert>}
           </Stack>
         )}
