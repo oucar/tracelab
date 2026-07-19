@@ -265,6 +265,11 @@ def analyst_node(task: AnalystTask | dict, deps: GraphDeps) -> dict:
             f"Execution result (exit={result.exit_code}, timed_out={result.timed_out})\n"
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
+        if result.exit_code == 0 and not result.stdout.strip():
+            feedback += (
+                "\nWARNING: your script printed NOTHING to stdout. Only printed output "
+                "comes back to you — wrap every result in print(...)."
+            )
         if rejections:
             feedback += "\nRejected charts:\n" + "\n".join(rejections)
         messages.append(HumanMessage(content=feedback))
@@ -333,14 +338,16 @@ def critic_node(state: RunState, deps: GraphDeps) -> dict:
             },
             t0,
         )
-        messages.append(
-            HumanMessage(
-                content=(
-                    f"Execution result (exit={result.exit_code}, timed_out={result.timed_out})\n"
-                    f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
-                )
-            )
+        critic_feedback = (
+            f"Execution result (exit={result.exit_code}, timed_out={result.timed_out})\n"
+            f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
+        if result.exit_code == 0 and not result.stdout.strip():
+            critic_feedback += (
+                "\nWARNING: your script printed NOTHING to stdout. Only printed output "
+                "comes back to you — wrap every result in print(...)."
+            )
+        messages.append(HumanMessage(content=critic_feedback))
 
     verdicts = reconcile_claims(claims, findings, cfg.numeric_rel_tolerance)
     for verdict in verdicts:

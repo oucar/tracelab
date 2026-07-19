@@ -22,7 +22,7 @@ class Settings(BaseSettings):
 
     # Budgets — hard stops, not suggestions.
     max_analyst_iterations: int = 3
-    sandbox_timeout_seconds: int = 20
+    sandbox_timeout_seconds: int = 30  # cold scipy imports under parallel load need headroom
     sandbox_memory_mb: int = 1024
     sandbox_cpu_seconds: int = 15
     max_upload_mb: int = 25

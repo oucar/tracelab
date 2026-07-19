@@ -53,6 +53,10 @@ os.makedirs("artifacts", exist_ok=True)
 def run_code(code: str, dataset_path: str | Path) -> SandboxResult:
     """Execute `code` in an isolated subprocess with the dataset copied to ./data.csv."""
     cfg = settings()
+    if "\n" not in code and "\\n" in code:
+        # Structured output sometimes double-escapes newlines; a one-line "script"
+        # full of literal \n is unambiguously that corruption.
+        code = code.replace("\\n", "\n").replace("\\t", "\t")
     workdir = Path(tempfile.mkdtemp(prefix="tracelab-sbx-"))
     try:
         shutil.copy(dataset_path, workdir / "data.csv")

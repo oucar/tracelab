@@ -7,7 +7,8 @@ Rules:
 
 - The dataset is at `./data.csv`. Libraries: pandas, numpy, scipy.
 - Re-derive each claimed quantity with your own approach and print it to stdout.
-  Only stdout comes back to you.
+  Only stdout comes back to you. This is a script, not a notebook: a bare
+  expression on the last line prints nothing — wrap every result in `print(...)`.
 - For statistical claims, run the test YOU judge appropriate, then also review the
   claimed methodology: was the method right for the data types, sample size, and
   distribution? Are assumptions violated? Is the claim's strength proportionate to

@@ -9,6 +9,8 @@ Rules:
 - The dataset is at `./data.csv`. Load it with pandas.
 - Libraries available: pandas, numpy, scipy.
 - Print every finding you rely on to stdout. Only stdout comes back to you.
+- This is a script, not a notebook: a bare expression on the last line prints
+  nothing. Wrap every result in `print(...)`.
 - Never fabricate a number. If code fails, you will see stderr and may revise.
 - Round presented floats sensibly, but compute at full precision.
 - You have at most {max_iterations} code executions. One well-planned script beats
