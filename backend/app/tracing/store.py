@@ -61,6 +61,35 @@ CREATE TABLE IF NOT EXISTS recordings (
     PRIMARY KEY (run_id, key, seq)
 );
 CREATE INDEX IF NOT EXISTS idx_spans_run ON spans(run_id, started_at);
+CREATE TABLE IF NOT EXISTS eval_runs (
+    id TEXT PRIMARY KEY,
+    created_at REAL NOT NULL,
+    label TEXT NOT NULL DEFAULT '',
+    git_sha TEXT NOT NULL DEFAULT '',
+    config_hash TEXT NOT NULL DEFAULT '',
+    config_json TEXT NOT NULL DEFAULT '{}',
+    questions_total INTEGER NOT NULL DEFAULT 0,
+    tier1_scorable INTEGER NOT NULL DEFAULT 0,
+    tier1_passed INTEGER NOT NULL DEFAULT 0,
+    judge_avg REAL,
+    cost_usd REAL NOT NULL DEFAULT 0,
+    duration_ms INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS eval_results (
+    eval_run_id TEXT NOT NULL,
+    question_id TEXT NOT NULL,
+    run_id TEXT NOT NULL DEFAULT '',
+    dataset TEXT NOT NULL DEFAULT '',
+    tags TEXT NOT NULL DEFAULT '[]',
+    tier1_scorable INTEGER NOT NULL,
+    tier1_passed INTEGER NOT NULL,
+    tier1_detail TEXT NOT NULL DEFAULT '',
+    judge TEXT,
+    judge_rationale TEXT NOT NULL DEFAULT '',
+    cost_usd REAL NOT NULL DEFAULT 0,
+    duration_ms INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (eval_run_id, question_id)
+);
 """
 
 
@@ -240,3 +269,87 @@ class Store:
             d["response"] = json.loads(d["response"])
             out.append(d)
         return out
+
+    # ── eval runs and results ─────────────────────────────────────────────
+    def add_eval_run(
+        self,
+        *,
+        id: str,
+        created_at: float,
+        label: str,
+        git_sha: str,
+        config_hash: str,
+        config_json: str,
+        questions_total: int,
+        tier1_scorable: int,
+        tier1_passed: int,
+        judge_avg: float | None,
+        cost_usd: float,
+        duration_ms: int,
+    ) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO eval_runs VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    id,
+                    created_at,
+                    label,
+                    git_sha,
+                    config_hash,
+                    config_json,
+                    questions_total,
+                    tier1_scorable,
+                    tier1_passed,
+                    judge_avg,
+                    cost_usd,
+                    duration_ms,
+                ),
+            )
+
+    def add_eval_result(
+        self,
+        *,
+        eval_run_id: str,
+        question_id: str,
+        run_id: str,
+        dataset: str,
+        tags_json: str,
+        tier1_scorable: bool,
+        tier1_passed: bool,
+        tier1_detail: str,
+        judge_json: str | None,
+        judge_rationale: str,
+        cost_usd: float,
+        duration_ms: int,
+    ) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO eval_results VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    eval_run_id,
+                    question_id,
+                    run_id,
+                    dataset,
+                    tags_json,
+                    int(tier1_scorable),
+                    int(tier1_passed),
+                    tier1_detail,
+                    judge_json,
+                    judge_rationale,
+                    cost_usd,
+                    duration_ms,
+                ),
+            )
+
+    def list_eval_runs(self) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute("SELECT * FROM eval_runs ORDER BY created_at DESC").fetchall()
+        return [dict(r) for r in rows]
+
+    def eval_results(self, eval_run_id: str) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM eval_results WHERE eval_run_id = ? ORDER BY question_id",
+                (eval_run_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
