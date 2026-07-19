@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AgentEvent } from "../lib/types";
+import type { AgentEvent, FinalAnswer } from "../lib/types";
 
 export type RunStatus = "idle" | "running" | "finished" | "error";
 
@@ -8,6 +8,7 @@ interface RunStoreState {
   status: RunStatus;
   events: AgentEvent[];
   answer: string;
+  final: FinalAnswer | null;
   error: string | null;
   start: (runId: string) => void;
   ingest: (event: AgentEvent) => void;
@@ -24,9 +25,11 @@ export const useRunStore = create<RunStoreState>((set) => ({
   status: "idle",
   events: [],
   answer: "",
+  final: null,
   error: null,
 
-  start: (runId) => set({ runId, status: "running", events: [], answer: "", error: null }),
+  start: (runId) =>
+    set({ runId, status: "running", events: [], answer: "", final: null, error: null }),
 
   ingest: (event) =>
     set((s) => {
@@ -34,6 +37,7 @@ export const useRunStore = create<RunStoreState>((set) => ({
       if (event.type === "run_finished") {
         next.status = "finished";
         next.answer = String(event.payload.answer ?? "");
+        next.final = (event.payload.final ?? null) as FinalAnswer | null;
       } else if (event.type === "error") {
         next.status = "error";
         next.error = String(event.payload.error ?? "unknown error");
@@ -41,7 +45,8 @@ export const useRunStore = create<RunStoreState>((set) => ({
       return next;
     }),
 
-  reset: () => set({ runId: null, status: "idle", events: [], answer: "", error: null }),
+  reset: () =>
+    set({ runId: null, status: "idle", events: [], answer: "", final: null, error: null }),
 }));
 
 export const selectTotalCost = (s: { events: AgentEvent[] }) =>

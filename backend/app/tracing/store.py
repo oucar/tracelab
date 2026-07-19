@@ -10,9 +10,16 @@ import json
 import sqlite3
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 from app.runtime.events import AgentEvent
+
+
+def utc_midnight() -> float:
+    """Start of the current UTC day as a unix timestamp — the budget window."""
+    now = datetime.now(timezone.utc)
+    return datetime(now.year, now.month, now.day, tzinfo=timezone.utc).timestamp()
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -21,6 +28,7 @@ CREATE TABLE IF NOT EXISTS runs (
     question TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'running',   -- running | finished | error
     answer TEXT DEFAULT '',
+    result TEXT NOT NULL DEFAULT '',          -- JSON FinalAnswer (claims, charts, verdicts)
     created_at REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS spans (
@@ -51,7 +59,18 @@ class Store:
     def __init__(self, db_path: str | Path):
         self.db_path = str(db_path)
         with self._conn() as conn:
+            self._migrate(conn)
             conn.executescript(_SCHEMA)
+
+    @staticmethod
+    def _migrate(conn: sqlite3.Connection) -> None:
+        """Additive migrations for databases created before a column existed."""
+        tables = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if "runs" not in tables:
+            return  # fresh database; _SCHEMA creates everything current
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(runs)")}
+        if "result" not in columns:
+            conn.execute("ALTER TABLE runs ADD COLUMN result TEXT NOT NULL DEFAULT ''")
 
     def _conn(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
@@ -97,10 +116,13 @@ class Store:
             )
         return run_id
 
-    def finish_run(self, run_id: str, answer: str, status: str = "finished") -> None:
+    def finish_run(
+        self, run_id: str, answer: str, status: str = "finished", result: str = ""
+    ) -> None:
         with self._conn() as conn:
             conn.execute(
-                "UPDATE runs SET status = ?, answer = ? WHERE id = ?", (status, answer, run_id)
+                "UPDATE runs SET status = ?, answer = ?, result = ? WHERE id = ?",
+                (status, answer, result, run_id),
             )
 
     def get_run(self, run_id: str) -> dict | None:
@@ -144,3 +166,11 @@ class Store:
             d["payload"] = json.loads(d["payload"])
             out.append(d)
         return out
+
+    def cost_since(self, since_ts: float) -> float:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT COALESCE(SUM(cost_usd), 0) AS c FROM spans WHERE started_at >= ?",
+                (since_ts,),
+            ).fetchone()
+        return float(row["c"])

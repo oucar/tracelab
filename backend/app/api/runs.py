@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
+from app.config import settings
 from app.deps import store
 from app.runtime.events import EventType, bus
 from app.runtime.graph import execute_run
 from app.runtime.state import RunState
+from app.tracing.store import utc_midnight
 
 router = APIRouter(prefix="/api/runs", tags=["runs"])
 
@@ -31,12 +34,10 @@ def _execute(run_id: str, dataset: dict, question: str) -> None:
     )
     try:
         final = execute_run(state)
-        store().finish_run(run_id, final.final_answer, "finished")
+        result = final.final.model_dump_json() if final.final else ""
+        store().finish_run(run_id, final.final_answer, "finished", result)
     except Exception as exc:
         store().finish_run(run_id, f"error: {exc}", "error")
-    finally:
-        for event in bus.history(run_id):
-            store().add_span(event)
 
 
 @router.post("")
@@ -46,6 +47,13 @@ async def create_run(req: AskRequest) -> dict:
         raise HTTPException(404, "dataset not found")
     if not req.question.strip():
         raise HTTPException(400, "question is empty")
+    cfg = settings()
+    spent = store().cost_since(utc_midnight())
+    if spent >= cfg.daily_budget_usd:
+        raise HTTPException(
+            429,
+            f"daily budget of ${cfg.daily_budget_usd:.2f} exhausted (${spent:.2f} spent today)",
+        )
     run_id = store().create_run(req.dataset_id, req.question.strip())
     asyncio.get_running_loop().run_in_executor(
         None, _execute, run_id, dataset, req.question.strip()
@@ -77,4 +85,5 @@ def get_run(run_id: str) -> dict:
     run = store().get_run(run_id)
     if run is None:
         raise HTTPException(404, "run not found")
+    run["result"] = json.loads(run["result"]) if run.get("result") else None
     return {**run, "spans": store().spans_for_run(run_id)}
