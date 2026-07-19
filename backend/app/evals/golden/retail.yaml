@@ -1,47 +1,126 @@
 name: retail
 csv: data/samples/retail_sales.csv
 questions:
-  - id: retail-001
-    question: "How many days of sales does the dataset cover?"
-    tags: [aggregation]
-    expected: {kind: numeric, value: null, tolerance: 0.0}
-  - id: retail-002
-    question: "What was the total revenue over the whole period?"
-    tags: [aggregation]
-    expected: {kind: numeric, value: null, tolerance: 0.01}
-  - id: retail-003
-    question: "What is the average number of units sold per day?"
-    tags: [aggregation]
-    expected: {kind: numeric, value: null, tolerance: 0.02}
-  - id: retail-004
-    question: "Which month of the year (1-12) has the highest average daily revenue?"
-    tags: [aggregation, groupby, dates]
-    expected: {kind: numeric, value: null, tolerance: 0.0}
-  - id: retail-005
-    question: "How many promo days are in the dataset?"
-    tags: [aggregation, filter]
-    expected: {kind: numeric, value: null, tolerance: 0.0}
-  - id: retail-006
-    question: "Do promo days sell significantly more units than non-promo days?"
-    tags: [stats, hypothesis-testing]
-    expected: {kind: statistical, direction: "", significant: null, method_family: mean-comparison}
-  - id: retail-007
-    question: "Is running a promotion significantly associated with weekends?"
-    tags: [stats, association]
-    expected: {kind: statistical, direction: "", significant: null, method_family: chi-square}
-  - id: retail-008
-    question: "Is there a significant upward trend in units sold over time?"
-    tags: [stats, trend]
-    expected: {kind: statistical, direction: "", significant: null, method_family: trend}
-  - id: retail-009
-    question: "What was the highest single-day revenue?"
-    tags: [aggregation]
-    expected: {kind: numeric, value: null, tolerance: 0.01}
-  - id: retail-010
-    question: "What is the average number of units sold on weekend days?"
-    tags: [aggregation, filter]
-    expected: {kind: numeric, value: null, tolerance: 0.02}
-  - id: retail-011
-    question: "Describe the seasonality of sales in this dataset."
-    tags: [narrative]
-    expected: {kind: narrative}
+- id: retail-001
+  question: How many days of sales does the dataset cover?
+  tags:
+  - aggregation
+  expected:
+    kind: numeric
+    value: 730.0
+    tolerance: 0.0
+    direction: ''
+    significant: null
+    method_family: ''
+- id: retail-002
+  question: What was the total revenue over the whole period?
+  tags:
+  - aggregation
+  expected:
+    kind: numeric
+    value: 1222581.71
+    tolerance: 0.01
+    direction: ''
+    significant: null
+    method_family: ''
+- id: retail-003
+  question: What is the average number of units sold per day?
+  tags:
+  - aggregation
+  expected:
+    kind: numeric
+    value: 372.0658
+    tolerance: 0.02
+    direction: ''
+    significant: null
+    method_family: ''
+- id: retail-004
+  question: Which month of the year (1-12) has the highest average daily revenue?
+  tags:
+  - aggregation
+  - groupby
+  - dates
+  expected:
+    kind: numeric
+    value: 8.0
+    tolerance: 0.0
+    direction: ''
+    significant: null
+    method_family: ''
+- id: retail-005
+  question: How many promo days are in the dataset?
+  tags:
+  - aggregation
+  - filter
+  expected:
+    kind: numeric
+    value: 93.0
+    tolerance: 0.0
+    direction: ''
+    significant: null
+    method_family: ''
+- id: retail-006
+  question: Do promo days sell significantly more units than non-promo days?
+  tags:
+  - stats
+  - hypothesis-testing
+  expected:
+    kind: statistical
+    value: null
+    tolerance: 0.0
+    direction: higher
+    significant: true
+    method_family: mean-comparison
+- id: retail-007
+  question: Is running a promotion significantly associated with weekends?
+  tags:
+  - stats
+  - association
+  expected:
+    kind: statistical
+    value: null
+    tolerance: 0.0
+    direction: higher
+    significant: true
+    method_family: chi-square
+- id: retail-008
+  question: Is there a significant upward trend in units sold over time?
+  tags:
+  - stats
+  - trend
+  expected:
+    kind: statistical
+    value: null
+    tolerance: 0.0
+    direction: higher
+    significant: true
+    method_family: trend
+- id: retail-009
+  question: What was the highest single-day revenue?
+  tags:
+  - aggregation
+  expected:
+    kind: numeric
+    value: 2814.01
+    tolerance: 0.01
+    direction: ''
+    significant: null
+    method_family: ''
+- id: retail-010
+  question: What is the average number of units sold on weekend days?
+  tags:
+  - aggregation
+  - filter
+  expected:
+    kind: numeric
+    value: 405.4375
+    tolerance: 0.02
+    direction: ''
+    significant: null
+    method_family: ''
+- id: retail-011
+  question: Describe the seasonality of sales in this dataset.
+  tags:
+  - narrative
+  expected:
+    kind: narrative
