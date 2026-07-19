@@ -38,7 +38,6 @@ from app.runtime.state import (
     RunState,
     VerifiedClaim,
 )
-from app.sandbox.executor import run_code
 
 PROMPTS_DIR = Path(__file__).resolve().parent.parent / "agents" / "prompts"
 
@@ -260,7 +259,7 @@ def analyst_node(task: AnalystTask | dict, deps: GraphDeps) -> dict:
         except BudgetExceeded as exc:
             return failure(str(exc))
         t0 = time.time()
-        result = run_code(turn.code, task.dataset_path)
+        result = deps.run_code(turn.code, task.dataset_path)
         iterations.append(AnalysisStep(iteration=iteration, result=result))
         specs, rejections = extract_chart_specs(result.artifacts, columns)
         chart_specs.extend(specs)
@@ -357,7 +356,7 @@ def critic_node(state: RunState, deps: GraphDeps) -> dict:
         except BudgetExceeded:
             break
         t0 = time.time()
-        result = run_code(turn.code, state.dataset_path)
+        result = deps.run_code(turn.code, state.dataset_path)
         sid = _emit(
             state.run_id,
             "critic",
