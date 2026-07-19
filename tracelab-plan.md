@@ -34,7 +34,7 @@ Four screens:
 3. **Runs dashboard** — every past run with cost, latency, quality score. Filter by model config. The quality vs cost vs latency scatter/frontier chart lives here.
 4. **Evals** — golden dataset results per commit/config, judge calibration stats (agreement with human labels), and the regression timeline: score over time with annotations for prompt/model changes.
 
-Demo flow for a stranger (target: under 60 seconds to wow): open site → click sample dataset ("NYC taxi sample" or similar) → click a suggested question → watch the graph execute → click the critic node and see it re-derive the number → open Runs and see the cost of what just happened.
+Demo flow (this is the storyboard for the README GIF and the 60-second video, since there's no public deploy): pick the sample dataset → click a suggested question → watch the graph execute live → click the critic node and see it re-derive the number → flash the methodology chip on a statistical claim → open Runs and show the cost of what just happened. Record it once, well, at M5; that recording is what 95% of viewers will ever see of the app.
 
 ---
 
@@ -62,7 +62,7 @@ Demo flow for a stranger (target: under 60 seconds to wow): open site → click 
                               OpenAI API (only external dependency)
 ```
 
-Deployment: frontend on Vercel, backend on a single Fly.io/Railway container (SQLite lives on a volume). Zero managed infra to explain, cheap enough to leave running.
+Deployment: none, and that's deliberate. tracelab is local-first: `docker compose up` (or `make dev`) with your own `OPENAI_API_KEY`. A public demo of an app that executes LLM-written code and bills per question is a cost and abuse liability with near-zero hiring upside; recruiters evaluate the README, the GIF, and the demo video, not a URL. The README says exactly this in one sentence, which turns "no deploy" into a judgment call instead of a gap.
 
 ### 3.1 The graph (the crown jewel)
 
@@ -73,6 +73,12 @@ Built on **LangGraph** (`langgraph` + `langchain-openai`), in `runtime/graph.py`
 - **Edges** — the orchestration logic lives in conditional edges: planner fans out one `analyst` branch per independent plan step via the **`Send` API**; a conditional edge after `critic` routes to `composer` (all verified), one bounded retry (discrepancy, with the critic's findings injected), or honest-failure composition.
 - **Checkpointing** — `SqliteSaver` checkpoints state at every superstep. This buys durability (a crashed run resumes from its last checkpoint), time-travel debugging, and the backbone of replay. Interviewers who use LangGraph will recognize this immediately.
 - **`AgentEvent`** — the single event type everything hangs off: `run_id, span_id, parent_span_id, agent, type (llm_call | tool_call | handoff | verdict | error), payload, tokens_in/out, cost_usd, started_at, duration_ms`. Produced by mapping LangGraph's `astream_events` stream (plus sandbox callbacks) into this one shape. The SSE stream, the trace store, the replay engine, and the live graph UI all consume it. Design this first; it is the load-bearing decision of the codebase.
+
+**Adaptive routing (lands in M4, after the full pipeline exists in M2).** A fixed planner → fan-out → critic → composer pipeline is overkill for "what's the average fare?" — two ceremonial LLM calls, extra latency and cost, zero value. So the graph scales with the question instead of running at fixed size:
+
+- A cheap **complexity router** at graph entry (mini model, one call, structured output: `simple | multi_step | statistical`) decides the shape. Simple questions skip the planner entirely and go straight to one analyst; the planner and `Send` fan-out only run for multi-step or statistical questions. The critic always runs — verification is never optional.
+- The **composer is conditional** too: a run with a single verified finding folds composition into the final step; the full composer call only happens when there are multiple findings to synthesize (or a failure to explain honestly).
+- Router decisions are emitted as `handoff` events with the chosen route and reason, so the run view literally shows different graph shapes for different questions — a strong demo moment, and the README line writes itself: "the orchestration scales with the question; most questions don't need orchestration."
 
 Why LangGraph (put this reasoning in the README): it is the de facto industry standard for agent orchestration, and using it well is a hiring signal in itself. The senior differentiation moves up the stack: verification gates, budgets, evals, and observability are all custom. The README's runtime section walks through the compiled graph and explains what LangGraph does under the hood (Pregel-style supersteps, channels, checkpoint semantics), so the framework reads as a deliberate choice, not a crutch.
 
@@ -172,7 +178,7 @@ Golden sets deliberately include statistical questions (tagged `stats`) so the e
 - Vite + React + TS + **Material UI + MUI X** (no Next.js: there's no SEO story and the API is Python). You already know MUI from two projects, and MUI X is a real hiring-relevant library. **MUI X Charts** renders every visualization in the app: agent-generated charts, the tradeoff frontier, latency/cost timelines, regression charts. **MUI X DataGrid** handles the runs table, eval results, and span listings.
 - **Agent charts are typed specs, not code.** Analysts emit a constrained `ChartSpec` (Pydantic on the backend, mirrored Zod schema on the front): `kind (line | bar | scatter | pie | histogram | box) + x/y/series + labels`. The spec is validated against the dataset's actual columns before render (a chart referencing a nonexistent column is rejected the same way a bad number is), then rendered with MUI X Charts. Charts become just another piece of verified structured output, which is the whole thesis. Matplotlib PNGs from the sandbox remain a fallback artifact for exotic plots (e.g. QQ plots), shown alongside native charts.
 - Note: a few MUI X chart types (e.g. heatmaps) are in the paid Pro tier. The judge calibration matrix is a small custom grid component instead; everything else fits the community tier.
-- SSE consumption via a single `useRunStream(runId)` hook that folds `AgentEvent`s into run state; the graph, the log panel, and the cost ticker all derive from that one store (Zustand or a reducer).
+- State management: **Zustand** for the live run store (the `useRunStream(runId)` hook folds SSE `AgentEvent`s into it; the graph, log panel, and cost ticker all derive from that one store) and **TanStack Query** for plain server state (runs list, eval history, dataset profiles). Live-stream state and fetch-cache state are different problems; using the right tool for each is the point.
 - Agent graph: nodes + edges from the span tree. Don't hand-roll layout; use reactflow. Animate state transitions (pending → running → done/failed).
 
 ---
@@ -226,13 +232,13 @@ Full graph: planner with structured plans, parallel analysts via `Send`, indepen
 **M3 — Observability (1 weekend).**
 Span persistence, cost meter, run view with live agent graph + span inspector, runs dashboard, deterministic replay. Exit: click any node in a past run and see everything; replay a run offline.
 
-**M4 — Evals (2 weekends, don't rush it).**
-Golden datasets and questions, programmatic scoring, LLM judge + rubric, the 40-label calibration set and agreement stats, regression storage + Evals screen, CI gate on the programmatic tier. Exit: the calibration table and the first regression chart exist with real numbers.
+**M4 — Evals + adaptive routing (2 to 3 weekends, don't rush it).**
+Golden datasets and questions, programmatic scoring, LLM judge + rubric, the 40-label calibration set and agreement stats, regression storage + Evals screen, CI gate on the programmatic tier. Plus adaptive routing from section 3.1: the complexity router at graph entry (planner skipped for simple questions), the conditional composer, and router decisions visible in the trace. Landing it alongside evals is deliberate — the golden set proves routing changes don't regress quality, and the cost meter quantifies what the skipped calls save. Exit: the calibration table and the first regression chart exist with real numbers; a simple and a multi-step question visibly produce different graph shapes in the run view, at unchanged eval scores.
 
 **M5 — The study + polish (1 weekend).**
-Multi-config tradeoff study, quality vs cost vs latency chart, README with architecture diagram and honest tradeoffs, 60-second demo video, deploy, blog post on blog.ucaronur.com ("I calibrated my LLM judge" or "Watching agents think: tracing a hand-rolled runtime" are both strong angles). Then add it to the portfolio grid.
+Multi-config tradeoff study, quality vs cost vs latency chart, README with architecture diagram and honest tradeoffs, the README GIF and 60-second demo video (recorded from the storyboard in section 2), blog post on blog.ucaronur.com ("I calibrated my LLM judge" or "Watching agents think: tracing a hand-rolled runtime" are both strong angles). Then add it to the portfolio grid.
 
-Scope guardrails: no auth (public demo, per-session data, cleanup job), no multi-tenancy, CSV only (no Excel/DB connectors), one provider (OpenAI; model-agnostic design proven by config, not by adapters).
+Scope guardrails: local-only (no deploy, no auth, no multi-tenancy), CSV only (no Excel/DB connectors), one provider (OpenAI; model-agnostic design proven by config, not by adapters).
 
 ---
 
@@ -242,7 +248,7 @@ Scope guardrails: no auth (public demo, per-session data, cleanup job), no multi
 # tracelab
 An agentic data analyst you can watch think.
 [demo GIF: the agent graph executing]
-Live demo · 60-sec video · blog post
+60-sec video · blog post · why there's no live demo (one honest sentence)
 
 ## Why
 3 short paragraphs: untrusted-LLM thesis, verification-first design, measure everything.
@@ -277,8 +283,8 @@ Standard quickstart.
 
 ## 7. Risks and pre-decisions
 
-- **Sandbox on the deploy host:** running untrusted code on a $5 container is the sketchiest part. Mitigations: strict rlimits, no-net, per-session temp dirs, size caps on uploads, and a kill switch env var that restricts public demo to bundled sample datasets only (uploads enabled in local dev). Decide the demo posture at M5.
-- **Cost control on a public demo:** per-session run quota + global daily budget cap enforced in the cost meter (it already meters everything, so the cap is nearly free).
+- **Your own API spend during development:** a per-run and daily budget cap enforced in the cost meter (it already meters everything, so the cap is nearly free), plus a `CHEAP_MODE=1` env flag that forces mini models everywhere for day-to-day dev. The eval judge tier runs only on demand. Replay makes UI work free.
+- **Sandbox honesty:** even local-only, keep the rlimits and no-net design; it's the portfolio point, and it protects your machine from a runaway `while True`.
 - **Critic false alarms:** floats need tolerance policy (relative epsilon per claim kind) or the critic becomes noise. Design the tolerance rules in M2, test them.
 - **Judge spend:** judge tier only runs on demand/nightly, and replay means re-scoring doesn't re-run agents.
 - **Scope creep:** the moment you're tempted to add SQL connectors or auth, stop and polish the evals screen instead. The evals are the portfolio; connectors are commodity.
