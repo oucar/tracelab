@@ -147,6 +147,40 @@ class Store:
             rows = conn.execute("SELECT * FROM runs ORDER BY created_at DESC").fetchall()
         return [dict(r) for r in rows]
 
+    def list_runs_with_stats(self) -> list[dict]:
+        """Dashboard rows: run columns + cost/token/latency rollups + claim quality."""
+        sql = """
+        SELECT r.id, r.dataset_id, r.question, r.status, r.replay_of, r.created_at, r.result,
+               COALESCE(s.cost_usd, 0) AS cost_usd,
+               COALESCE(s.tokens_in, 0) AS tokens_in,
+               COALESCE(s.tokens_out, 0) AS tokens_out,
+               COALESCE(s.duration_ms, 0) AS duration_ms
+        FROM runs r
+        LEFT JOIN (
+            SELECT run_id,
+                   SUM(cost_usd) AS cost_usd,
+                   SUM(tokens_in) AS tokens_in,
+                   SUM(tokens_out) AS tokens_out,
+                   CAST((MAX(started_at + duration_ms / 1000.0) - MIN(started_at)) * 1000
+                        AS INTEGER) AS duration_ms
+            FROM spans GROUP BY run_id
+        ) s ON s.run_id = r.id
+        ORDER BY r.created_at DESC
+        """
+        with self._conn() as conn:
+            rows = conn.execute(sql).fetchall()
+        out = []
+        for row in rows:
+            d = dict(row)
+            claims = []
+            result = d.pop("result")
+            if result:
+                claims = json.loads(result).get("claims", [])
+            d["claims_total"] = len(claims)
+            d["claims_verified"] = sum(1 for c in claims if c.get("status") == "verified")
+            out.append(d)
+        return out
+
     # ── spans ─────────────────────────────────────────────────────────────
     def add_span(self, event: AgentEvent) -> None:
         with self._conn() as conn:

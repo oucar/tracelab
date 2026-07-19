@@ -1,5 +1,7 @@
 """Trace store: datasets, runs, spans round-trip."""
 
+import pytest
+
 from app.runtime.events import AgentEvent, EventType
 from app.tracing.store import Store
 
@@ -101,3 +103,48 @@ def test_replay_of_column_roundtrip_and_migration(tmp_path):
     conn.commit()
     conn.close()
     assert Store(db).get_run("r1")["replay_of"] == ""
+
+
+def test_list_runs_with_stats_rolls_up_cost_latency_quality(tmp_path):
+    store = Store(tmp_path / "t.db")
+    ds = store.add_dataset("d", "/tmp/d.csv", {})
+    run_id = store.create_run(ds, "q")
+    store.add_span(
+        AgentEvent(
+            run_id=run_id, agent="planner", type=EventType.LLM_CALL,
+            tokens_in=100, tokens_out=50, cost_usd=0.001, started_at=10.0, duration_ms=500,
+        )
+    )
+    store.add_span(
+        AgentEvent(
+            run_id=run_id, agent="composer", type=EventType.LLM_CALL,
+            tokens_in=200, tokens_out=100, cost_usd=0.002, started_at=12.0, duration_ms=1000,
+        )
+    )
+    result = {
+        "narrative": "n",
+        "failed": False,
+        "charts": [],
+        "claims": [
+            {"claim": {"text": "a", "kind": "numeric"}, "status": "verified", "detail": ""},
+            {"claim": {"text": "b", "kind": "numeric"}, "status": "unverified", "detail": "d"},
+        ],
+    }
+    import json as _json
+
+    store.finish_run(run_id, "answer", "finished", _json.dumps(result))
+
+    empty_run = store.create_run(ds, "no spans yet")
+
+    rows = store.list_runs_with_stats()
+    assert [r["id"] for r in rows] == [empty_run, run_id]  # newest first
+    row = next(r for r in rows if r["id"] == run_id)
+    assert row["cost_usd"] == pytest.approx(0.003)
+    assert row["tokens_in"] == 300 and row["tokens_out"] == 150
+    # first span starts at 10.0, last ends at 12.0 + 1.0s → 3000ms wall clock
+    assert row["duration_ms"] == 3000
+    assert row["claims_total"] == 2 and row["claims_verified"] == 1
+    assert "result" not in row and "answer" not in row
+
+    empty = next(r for r in rows if r["id"] == empty_run)
+    assert empty["cost_usd"] == 0 and empty["duration_ms"] == 0 and empty["claims_total"] == 0

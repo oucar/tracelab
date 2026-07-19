@@ -100,7 +100,7 @@ async def run_events(run_id: str) -> EventSourceResponse:
 
 @router.get("")
 def list_runs() -> list[dict]:
-    return store().list_runs()
+    return store().list_runs_with_stats()
 
 
 @router.get("/{run_id}")
