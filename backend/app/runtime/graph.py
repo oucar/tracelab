@@ -55,22 +55,24 @@ def _emit(
     payload: dict,
     started: float,
     usage: LLMUsage | None = None,
-) -> None:
-    bus.emit(
-        AgentEvent(
-            run_id=run_id,
-            agent=agent,
-            type=type_,
-            payload=payload,
-            tokens_in=usage.tokens_in if usage else 0,
-            tokens_out=usage.tokens_out if usage else 0,
-            cost_usd=pricing.cost_usd(usage.model, usage.tokens_in, usage.tokens_out)
-            if usage
-            else 0.0,
-            started_at=started,
-            duration_ms=int((time.time() - started) * 1000),
-        )
+    parent: str | None = None,
+) -> str:
+    event = AgentEvent(
+        run_id=run_id,
+        parent_span_id=parent,
+        agent=agent,
+        type=type_,
+        payload=payload,
+        tokens_in=usage.tokens_in if usage else 0,
+        tokens_out=usage.tokens_out if usage else 0,
+        cost_usd=pricing.cost_usd(usage.model, usage.tokens_in, usage.tokens_out)
+        if usage
+        else 0.0,
+        started_at=started,
+        duration_ms=int((time.time() - started) * 1000),
     )
+    bus.emit(event)
+    return event.span_id
 
 
 def _latest_results(results: list[AnalystResult]) -> dict[int, AnalystResult]:
@@ -101,19 +103,27 @@ def planner_node(state: RunState, deps: GraphDeps) -> dict:
         )
         budget.spend_llm(usage.tokens_in, usage.tokens_out)
     except (BudgetExceeded, MalformedOutputError) as exc:
-        _emit(state.run_id, "planner", EventType.ERROR, {"error": str(exc)}, t0)
+        _emit(
+            state.run_id,
+            "planner",
+            EventType.ERROR,
+            {"error": str(exc)},
+            t0,
+            parent=state.root_span_id,
+        )
         return {"planner_failed": True, "planner_failure_reason": str(exc)}
 
     steps = turn.steps[: cfg.max_plan_steps]
     for i, step in enumerate(steps, start=1):
         step.id = i
-    _emit(
+    span = _emit(  # the plan llm_call — the planner's node root
         state.run_id,
         "planner",
         EventType.LLM_CALL,
         {"plan": [s.model_dump() for s in steps], "rationale": turn.rationale},
         t0,
         usage,
+        parent=state.root_span_id,
     )
     if not steps:
         return {"planner_failed": True, "planner_failure_reason": "planner produced an empty plan"}
@@ -123,6 +133,7 @@ def planner_node(state: RunState, deps: GraphDeps) -> dict:
         EventType.HANDOFF,
         {"to": "analyst", "steps": [s.id for s in steps]},
         time.time(),
+        parent=span,
     )
     return {"plan": Plan(steps=steps, rationale=turn.rationale)}
 
@@ -138,6 +149,7 @@ def fan_out(state: RunState):
                 question=state.question,
                 dataset_path=state.dataset_path,
                 dataset_profile=state.dataset_profile,
+                root_span_id=state.root_span_id,
                 step=step,
             ).model_dump(),
         )
@@ -157,6 +169,7 @@ def _assign_claim_ids(step_id: int, claims: list[Claim]) -> list[Claim]:
 
 def analyst_node(task: AnalystTask | dict, deps: GraphDeps) -> dict:
     task = AnalystTask.model_validate(task)  # Send delivers a plain dict payload
+    branch_root: str | None = None
     cfg = settings()
     budget = AgentBudget.for_role("analyst")
     step = task.step
@@ -207,22 +220,26 @@ def analyst_node(task: AnalystTask | dict, deps: GraphDeps) -> dict:
             turn, usage = deps.analyst_turn(messages)
             budget.spend_llm(usage.tokens_in, usage.tokens_out)
         except (BudgetExceeded, MalformedOutputError) as exc:
-            _emit(
+            sid = _emit(
                 task.run_id,
                 "analyst",
                 EventType.ERROR,
                 {"step_id": step.id, "error": str(exc)},
                 t0,
+                parent=branch_root or task.root_span_id,
             )
+            branch_root = branch_root or sid
             return failure(str(exc))
-        _emit(
+        sid = _emit(
             task.run_id,
             "analyst",
             EventType.LLM_CALL,
             {"step_id": step.id, "iteration": iteration, "action": turn.action},
             t0,
             usage,
+            parent=branch_root or task.root_span_id,
         )
+        branch_root = branch_root or sid
 
         if turn.action == "finish":
             return {
@@ -248,7 +265,7 @@ def analyst_node(task: AnalystTask | dict, deps: GraphDeps) -> dict:
         specs, rejections = extract_chart_specs(result.artifacts, columns)
         chart_specs.extend(specs)
         chart_rejections.extend(rejections)
-        _emit(
+        sid = _emit(
             task.run_id,
             "analyst",
             EventType.TOOL_CALL,
@@ -264,7 +281,9 @@ def analyst_node(task: AnalystTask | dict, deps: GraphDeps) -> dict:
                 "charts_rejected": rejections,
             },
             t0,
+            parent=branch_root or task.root_span_id,
         )
+        branch_root = branch_root or sid
         feedback = (
             f"Execution result (exit={result.exit_code}, timed_out={result.timed_out})\n"
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
@@ -303,22 +322,33 @@ def critic_node(state: RunState, deps: GraphDeps) -> dict:
     ]
 
     findings = []
+    branch_root: str | None = None
     for iteration in range(1, cfg.max_critic_iterations + 2):
         t0 = time.time()
         try:
             turn, usage = deps.critic_turn(messages)
             budget.spend_llm(usage.tokens_in, usage.tokens_out)
         except (BudgetExceeded, MalformedOutputError) as exc:
-            _emit(state.run_id, "critic", EventType.ERROR, {"error": str(exc)}, t0)
+            sid = _emit(
+                state.run_id,
+                "critic",
+                EventType.ERROR,
+                {"error": str(exc)},
+                t0,
+                parent=branch_root or state.root_span_id,
+            )
+            branch_root = branch_root or sid
             break  # claims fall through as unverifiable
-        _emit(
+        sid = _emit(
             state.run_id,
             "critic",
             EventType.LLM_CALL,
             {"iteration": iteration, "action": turn.action},
             t0,
             usage,
+            parent=branch_root or state.root_span_id,
         )
+        branch_root = branch_root or sid
         if turn.action == "finish":
             findings = turn.findings
             break
@@ -328,7 +358,7 @@ def critic_node(state: RunState, deps: GraphDeps) -> dict:
             break
         t0 = time.time()
         result = run_code(turn.code, state.dataset_path)
-        _emit(
+        sid = _emit(
             state.run_id,
             "critic",
             EventType.TOOL_CALL,
@@ -341,7 +371,9 @@ def critic_node(state: RunState, deps: GraphDeps) -> dict:
                 "timed_out": result.timed_out,
             },
             t0,
+            parent=branch_root or state.root_span_id,
         )
+        branch_root = branch_root or sid
         critic_feedback = (
             f"Execution result (exit={result.exit_code}, timed_out={result.timed_out})\n"
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
@@ -355,7 +387,14 @@ def critic_node(state: RunState, deps: GraphDeps) -> dict:
 
     verdicts = reconcile_claims(claims, findings, cfg.numeric_rel_tolerance)
     for verdict in verdicts:
-        _emit(state.run_id, "critic", EventType.VERDICT, verdict.model_dump(), time.time())
+        _emit(
+            state.run_id,
+            "critic",
+            EventType.VERDICT,
+            verdict.model_dump(),
+            time.time(),
+            parent=branch_root or state.root_span_id,
+        )
 
     claim_step = {c.id: c.step_id for c in claims}
     disputed = sorted({claim_step[v.claim_id] for v in verdicts if v.status == "discrepancy"})
@@ -366,6 +405,7 @@ def critic_node(state: RunState, deps: GraphDeps) -> dict:
             EventType.HANDOFF,
             {"to": "analyst", "retry_steps": disputed},
             time.time(),
+            parent=branch_root or state.root_span_id,
         )
         return {
             "verdicts": verdicts,
@@ -393,6 +433,7 @@ def route_after_critic(state: RunState):
                 question=state.question,
                 dataset_path=state.dataset_path,
                 dataset_profile=state.dataset_profile,
+                root_span_id=state.root_span_id,
                 step=step_map[sid],
                 critic_feedback="\n".join(feedback[sid]) or "the critic disputed this step",
             ).model_dump(),
@@ -453,7 +494,15 @@ def composer_node(state: RunState, deps: GraphDeps) -> dict:
             HumanMessage(content=f"Question: {state.question}\n\n{context}"),
         ]
     )
-    _emit(state.run_id, "composer", EventType.LLM_CALL, {"answer": answer}, t0, usage)
+    _emit(
+        state.run_id,
+        "composer",
+        EventType.LLM_CALL,
+        {"answer": answer},
+        t0,
+        usage,
+        parent=state.root_span_id,
+    )
     final = FinalAnswer(narrative=answer, claims=verified_claims, charts=charts, failed=failed)
     return {"final_answer": answer, "final": final}
 
@@ -479,14 +528,14 @@ def execute_run(state: RunState, deps: GraphDeps | None = None) -> RunState:
     """Run the graph for one question, emitting lifecycle events."""
     deps = deps or GraphDeps.default()
     t0 = time.time()
-    bus.emit(
-        AgentEvent(
-            run_id=state.run_id,
-            agent="system",
-            type=EventType.RUN_STARTED,
-            payload={"question": state.question},
-        )
+    root = AgentEvent(
+        run_id=state.run_id,
+        agent="system",
+        type=EventType.RUN_STARTED,
+        payload={"question": state.question},
     )
+    bus.emit(root)
+    state.root_span_id = root.span_id
     try:
         # Local imports keep unit tests (which call build_graph directly) off the
         # checkpoint DB; SqliteSaver checkpoints every superstep under thread_id=run_id.
@@ -510,6 +559,7 @@ def execute_run(state: RunState, deps: GraphDeps | None = None) -> RunState:
                 "final": final_state.final.model_dump() if final_state.final else None,
             },
             t0,
+            parent=final_state.root_span_id,
         )
         return final_state
     except Exception as exc:  # surface, don't swallow — the UI shows honest errors
@@ -519,6 +569,7 @@ def execute_run(state: RunState, deps: GraphDeps | None = None) -> RunState:
                 agent="system",
                 type=EventType.ERROR,
                 payload={"error": str(exc)},
+                parent_span_id=root.span_id,
             )
         )
         raise

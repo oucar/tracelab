@@ -52,9 +52,21 @@ class EventBus:
         self._queues: dict[str, list[asyncio.Queue[AgentEvent | None]]] = {}
         self._history: dict[str, list[AgentEvent]] = {}
         self._finished: set[str] = set()
+        self._sinks: list = []
+
+    def add_sink(self, sink) -> None:
+        """Register a synchronous callback invoked for every emitted event.
+
+        Sinks persist events as they happen (live span persistence); they must
+        not raise — a broken sink would take the run down with it, honestly.
+        """
+        if sink not in self._sinks:
+            self._sinks.append(sink)
 
     def emit(self, event: AgentEvent) -> None:
         self._history.setdefault(event.run_id, []).append(event)
+        for sink in self._sinks:
+            sink(event)
         if event.type in (EventType.RUN_FINISHED, EventType.ERROR):
             self._finished.add(event.run_id)
         for q in self._queues.get(event.run_id, []):

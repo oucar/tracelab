@@ -41,3 +41,17 @@ async def test_runs_are_isolated():
     bus.emit(make_event("b", EventType.RUN_FINISHED))
     a_events = [e async for e in bus.subscribe("a")]
     assert all(e.run_id == "a" for e in a_events)
+
+
+def test_sink_receives_every_event_at_emit_time():
+    from app.runtime.events import AgentEvent, EventBus, EventType
+
+    bus = EventBus()
+    seen: list[str] = []
+    sink = lambda e: seen.append(e.type.value)  # noqa: E731
+    bus.add_sink(sink)
+    bus.add_sink(sink)  # double registration is a no-op
+
+    bus.emit(AgentEvent(run_id="r-sink", agent="system", type=EventType.RUN_STARTED))
+    bus.emit(AgentEvent(run_id="r-sink", agent="system", type=EventType.RUN_FINISHED))
+    assert seen == ["run_started", "run_finished"]
