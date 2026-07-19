@@ -76,3 +76,41 @@ export interface FinalAnswer {
   charts: unknown[]; // validated at render time by the Zod chartSpecSchema
   failed: boolean;
 }
+
+export type RunStatusValue = "running" | "finished" | "error";
+
+/** One row of GET /api/runs — dashboard aggregates, no heavy payloads. */
+export interface RunSummary {
+  id: string;
+  dataset_id: string;
+  question: string;
+  status: RunStatusValue;
+  replay_of: string;
+  created_at: number;
+  cost_usd: number;
+  tokens_in: number;
+  tokens_out: number;
+  duration_ms: number;
+  claims_total: number;
+  claims_verified: number;
+}
+
+/** GET /api/runs/:id — the full run including its span tree. */
+export interface RunDetail {
+  id: string;
+  dataset_id: string;
+  question: string;
+  status: RunStatusValue;
+  answer: string;
+  result: FinalAnswer | null;
+  replay_of: string;
+  created_at: number;
+  spans: AgentEvent[];
+}
+
+export interface AppConfig {
+  cheap_mode: boolean;
+  daily_budget_usd: number;
+  spent_today: number;
+  models: Record<string, string>;
+}
