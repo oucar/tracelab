@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-quer
 import { BrowserRouter, Link as RouterLink, Route, Routes } from "react-router-dom";
 import { getConfig } from "./lib/api";
 import { RunsDashboard } from "./pages/RunsDashboard";
+import { RunView } from "./pages/RunView";
 import { Workbench } from "./pages/Workbench";
 
 const theme = createTheme({
@@ -63,6 +64,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Workbench />} />
             <Route path="/runs" element={<RunsDashboard />} />
+            <Route path="/runs/:runId" element={<RunView />} />
           </Routes>
         </BrowserRouter>
       </ThemeProvider>
