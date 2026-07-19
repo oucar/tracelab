@@ -7,7 +7,7 @@ questions:
   - aggregation
   expected:
     kind: numeric
-    value: 730.0
+    value: 730
     tolerance: 0.0
     direction: ''
     significant: null
@@ -77,7 +77,7 @@ questions:
   - filter
   expected:
     kind: numeric
-    value: 18.0
+    value: 18
     tolerance: 0.0
     direction: ''
     significant: null

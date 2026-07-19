@@ -17,7 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 class GoldenExpected(BaseModel):
     kind: Literal["numeric", "categorical", "statistical", "narrative"]
-    value: float | str | None = None
+    value: int | float | str | None = None
     tolerance: float = 0.0  # relative band for floats; 0.0 means exact
     direction: Literal["higher", "lower", ""] = ""
     significant: bool | None = None
