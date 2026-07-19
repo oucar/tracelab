@@ -73,3 +73,31 @@ def test_cost_since_sums_span_costs(tmp_path):
         )
     assert store.cost_since(60.0) == 0.75  # the ts=50 span is before the window
     assert store.cost_since(0.0) == 1.75
+
+
+def test_replay_of_column_roundtrip_and_migration(tmp_path):
+    store = Store(tmp_path / "t.db")
+    ds = store.add_dataset("d", "/tmp/d.csv", {})
+    original = store.create_run(ds, "q")
+    replay = store.create_run(ds, "q", replay_of=original)
+    assert store.get_run(original)["replay_of"] == ""
+    assert store.get_run(replay)["replay_of"] == original
+
+    # a pre-M3 database gains the column on open
+    import sqlite3
+
+    db = tmp_path / "old.sqlite3"
+    conn = sqlite3.connect(db)
+    conn.executescript(
+        """
+        CREATE TABLE runs (
+            id TEXT PRIMARY KEY, dataset_id TEXT NOT NULL, question TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'running', answer TEXT DEFAULT '',
+            result TEXT NOT NULL DEFAULT '', created_at REAL NOT NULL
+        );
+        INSERT INTO runs (id, dataset_id, question, created_at) VALUES ('r1', 'd1', 'q', 0);
+        """
+    )
+    conn.commit()
+    conn.close()
+    assert Store(db).get_run("r1")["replay_of"] == ""

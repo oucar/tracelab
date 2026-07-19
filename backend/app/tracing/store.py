@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS runs (
     status TEXT NOT NULL DEFAULT 'running',   -- running | finished | error
     answer TEXT DEFAULT '',
     result TEXT NOT NULL DEFAULT '',          -- JSON FinalAnswer (claims, charts, verdicts)
+    replay_of TEXT NOT NULL DEFAULT '',       -- run_id this run replays, '' if not a replay
     created_at REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS spans (
@@ -79,6 +80,8 @@ class Store:
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(runs)")}
         if "result" not in columns:
             conn.execute("ALTER TABLE runs ADD COLUMN result TEXT NOT NULL DEFAULT ''")
+        if "replay_of" not in columns:
+            conn.execute("ALTER TABLE runs ADD COLUMN replay_of TEXT NOT NULL DEFAULT ''")
 
     def _conn(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
@@ -115,12 +118,13 @@ class Store:
         return out
 
     # ── runs ──────────────────────────────────────────────────────────────
-    def create_run(self, dataset_id: str, question: str) -> str:
+    def create_run(self, dataset_id: str, question: str, replay_of: str = "") -> str:
         run_id = uuid.uuid4().hex[:12]
         with self._conn() as conn:
             conn.execute(
-                "INSERT INTO runs (id, dataset_id, question, created_at) VALUES (?, ?, ?, ?)",
-                (run_id, dataset_id, question, time.time()),
+                "INSERT INTO runs (id, dataset_id, question, replay_of, created_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (run_id, dataset_id, question, replay_of, time.time()),
             )
         return run_id
 
