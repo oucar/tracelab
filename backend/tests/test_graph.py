@@ -6,8 +6,9 @@ from pathlib import Path
 import pytest
 
 from app.agents.llm import GraphDeps, LLMUsage
-from app.agents.schemas import AnalystTurn, CriticFinding, CriticTurn, PlannerTurn
+from app.agents.schemas import AnalystTurn, CriticFinding, CriticTurn, PlannerTurn, RouterTurn
 from app.runtime.graph import execute_run
+from app.runtime.events import bus
 from app.runtime.state import Claim, PlanStep, RunState
 
 U = LLMUsage(tokens_in=10, tokens_out=5)
@@ -32,6 +33,13 @@ def make_state(dataset: Path, run_id: str) -> RunState:
     )
 
 
+def one_step_planner(messages):
+    return (
+        PlannerTurn(steps=[PlanStep(description="Compute the total fare", method="descriptive")]),
+        U,
+    )
+
+
 def two_step_planner(messages):
     return (
         PlannerTurn(
@@ -42,6 +50,10 @@ def two_step_planner(messages):
         ),
         U,
     )
+
+
+def count_claim(value: float) -> Claim:
+    return Claim(text="row count", kind="numeric", value=value)
 
 
 def finishing_analyst(findings_by_step: dict[int, tuple[str, list[Claim]]]):
@@ -321,3 +333,108 @@ def test_sandbox_is_injectable_through_deps(dataset):
 def test_plan_step_accepts_m3_methods():
     for method in ("regression", "clustering", "timeseries_backtest", "anomaly_detection"):
         assert PlanStep(description="x", method=method).method == method
+
+
+# ── Task 13: router node, simple-route Send, conditional composer ────────────
+
+
+def _router(route: str):
+    def fn(_msgs):
+        return RouterTurn(route=route, reason=f"stubbed {route}"), U
+
+    return fn
+
+
+def test_simple_route_skips_planner(dataset):
+    planner_calls = []
+
+    def spying_planner(msgs):
+        planner_calls.append(msgs)
+        return one_step_planner(msgs)
+
+    deps = GraphDeps(
+        planner=spying_planner,
+        analyst_turn=finishing_analyst({1: ("3 rows.", [count_claim(3)])}),
+        critic_turn=verifying_critic,
+        compose=lambda m: ("unused", U),
+        router=_router("simple"),
+    )
+    out = execute_run(make_state(dataset, "run-simple"), deps)
+    assert not planner_calls  # planner LLM never called
+    events = bus.history("run-simple")
+    assert not [e for e in events if e.agent == "planner"]
+    router_events = [e for e in events if e.agent == "router"]
+    assert router_events and router_events[0].payload["route"] == "simple"
+    assert out.final is not None and not out.final.failed
+
+
+def test_simple_route_folds_composer(dataset):
+    compose_calls = []
+
+    def spying_compose(msgs):
+        compose_calls.append(msgs)
+        return ("unused", U)
+
+    deps = GraphDeps(
+        planner=one_step_planner,
+        analyst_turn=finishing_analyst({1: ("3 rows.", [count_claim(3)])}),
+        critic_turn=verifying_critic,
+        compose=spying_compose,
+        router=_router("simple"),
+    )
+    out = execute_run(make_state(dataset, "run-folded"), deps)
+    assert not compose_calls  # composer LLM skipped
+    folded = [
+        e
+        for e in bus.history("run-folded")
+        if e.agent == "composer" and e.payload.get("folded")
+    ]
+    assert folded
+    assert out.final.narrative  # narrative taken from the analyst's findings
+
+
+def test_statistical_route_uses_planner(dataset):
+    deps = GraphDeps(
+        planner=one_step_planner,
+        analyst_turn=finishing_analyst({1: ("3 rows.", [count_claim(3)])}),
+        critic_turn=verifying_critic,
+        compose=lambda m: ("composed", U),
+        router=_router("statistical"),
+    )
+    execute_run(make_state(dataset, "run-stat"), deps)
+    events = bus.history("run-stat")
+    assert [e for e in events if e.agent == "planner"]
+    assert [e for e in events if e.agent == "router"][0].payload["route"] == "statistical"
+
+
+def test_no_router_behaves_like_multi_step(dataset):
+    deps = GraphDeps(
+        planner=one_step_planner,
+        analyst_turn=finishing_analyst({1: ("3 rows.", [count_claim(3)])}),
+        critic_turn=verifying_critic,
+        compose=lambda m: ("composed", U),
+    )
+    out = execute_run(make_state(dataset, "run-norouter"), deps)
+    assert out.final is not None
+    route_events = [e for e in bus.history("run-norouter") if e.agent == "router"]
+    assert route_events and route_events[0].payload["route"] == "multi_step"
+
+
+def test_multi_finding_run_still_uses_composer(dataset):
+    compose_calls = []
+
+    def spying_compose(msgs):
+        compose_calls.append(msgs)
+        return ("composed", U)
+
+    deps = GraphDeps(
+        planner=two_step_planner,
+        analyst_turn=finishing_analyst(
+            {1: ("A.", [count_claim(3)]), 2: ("B.", [count_claim(3)])}
+        ),
+        critic_turn=verifying_critic,
+        compose=spying_compose,
+        router=_router("multi_step"),
+    )
+    execute_run(make_state(dataset, "run-multi"), deps)
+    assert compose_calls
