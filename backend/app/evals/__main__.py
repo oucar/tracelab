@@ -60,8 +60,11 @@ def _cmd_report(args) -> None:
     report = calibration_report(st, labels) if labels else {}
     print(calibration_markdown(report))
     if args.png:
-        tradeoff_png(rows, Path(args.png))
-        print(f"\nwrote {args.png}")
+        if rows:
+            tradeoff_png(rows, Path(args.png))
+            print(f"\nwrote {args.png}")
+        else:
+            print("\nno study:* runs yet — skipping tradeoff PNG. Run `python -m app.evals study` first.")
 
 
 def _cmd_study(args) -> None:

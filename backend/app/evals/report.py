@@ -57,6 +57,8 @@ def calibration_markdown(report: dict) -> str:
 
 
 def tradeoff_png(rows: list[dict], out_path: Path) -> None:
+    if not rows:
+        return
     fig, ax = plt.subplots(figsize=(7, 4.5), dpi=150)
     xs = [r["cost_per_question"] for r in rows]
     ys = [r["judge_avg"] if r["judge_avg"] is not None
