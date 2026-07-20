@@ -35,6 +35,7 @@ from app.runtime.state import (
     Claim,
     FinalAnswer,
     Plan,
+    PlanStep,
     RunState,
     VerifiedClaim,
 )
@@ -80,6 +81,74 @@ def _latest_results(results: list[AnalystResult]) -> dict[int, AnalystResult]:
     for r in results:
         latest[r.step_id] = r
     return dict(sorted(latest.items()))
+
+
+# ── router ───────────────────────────────────────────────────────────────────
+
+
+def router_node(state: RunState, deps: GraphDeps) -> dict:
+    t0 = time.time()
+    if deps.router is None:
+        route, reason, usage = "multi_step", "no router configured", None
+    else:
+        budget = AgentBudget.for_role("router")
+        try:
+            turn, usage = deps.router(
+                [
+                    HumanMessage(
+                        content=_prompt(
+                            "router", profile=state.dataset_profile, question=state.question
+                        )
+                    )
+                ]
+            )
+            budget.spend_llm(usage.tokens_in, usage.tokens_out)
+        except (BudgetExceeded, MalformedOutputError) as exc:
+            _emit(
+                state.run_id,
+                "router",
+                EventType.ERROR,
+                {"error": str(exc)},
+                t0,
+                parent=state.root_span_id,
+            )
+            route, reason, usage = "multi_step", f"router failed, defaulting: {exc}", None
+        else:
+            route, reason = turn.route, turn.reason
+
+    _emit(
+        state.run_id,
+        "router",
+        EventType.HANDOFF,
+        {"route": route, "reason": reason, "to": "analyst" if route == "simple" else "planner"},
+        t0,
+        usage,
+        parent=state.root_span_id,
+    )
+    out: dict = {"route": route, "route_reason": reason}
+    if route == "simple":
+        step = PlanStep(id=1, description=state.question, method="descriptive")
+        out["plan"] = Plan(steps=[step], rationale=f"router: simple — {reason}")
+    return out
+
+
+def route_from_router(state: RunState):
+    if state.route == "simple" and state.plan and state.plan.steps:
+        step = state.plan.steps[0]
+        return [
+            Send(
+                "analyst",
+                AnalystTask(
+                    run_id=state.run_id,
+                    question=state.question,
+                    dataset_path=state.dataset_path,
+                    dataset_profile=state.dataset_profile,
+                    root_span_id=state.root_span_id,
+                    step=step,
+                ).model_dump(),
+            )
+        ]
+    return "planner"
 
 
 # ── planner ──────────────────────────────────────────────────────────────────
@@ -463,6 +532,33 @@ def composer_node(state: RunState, deps: GraphDeps) -> dict:
                 )
 
     charts = [spec for r in latest.values() for spec in r.chart_specs]
+
+    # Folding is the simple-route fast path specifically (Task 13), not a generic
+    # "any single verified step" shortcut — a planner-derived single-step plan on
+    # the multi_step/statistical routes still goes through the composer LLM.
+    single = state.route == "simple" and len(latest) == 1 and not state.planner_failed
+    only = next(iter(latest.values())) if single else None
+    all_verified = (
+        single
+        and only is not None
+        and not only.failed
+        and bool(state.verdicts)
+        and all(v.status == "verified" for v in state.verdicts)
+    )
+    if all_verified:
+        _emit(
+            state.run_id,
+            "composer",
+            EventType.HANDOFF,
+            {"folded": True, "reason": "single verified finding"},
+            t0,
+            parent=state.root_span_id,
+        )
+        final = FinalAnswer(
+            narrative=only.findings, claims=verified_claims, charts=charts, failed=False
+        )
+        return {"final_answer": only.findings, "final": final}
+
     all_failed = bool(latest) and all(r.failed for r in latest.values())
     failed = state.planner_failed or not latest or all_failed
 
@@ -511,11 +607,13 @@ def composer_node(state: RunState, deps: GraphDeps) -> dict:
 
 def build_graph(deps: GraphDeps, checkpointer=None):
     g = StateGraph(RunState)
+    g.add_node("router", lambda s: router_node(s, deps))
     g.add_node("planner", lambda s: planner_node(s, deps))
     g.add_node("analyst", lambda t: analyst_node(t, deps), input_schema=AnalystTask)
     g.add_node("critic", lambda s: critic_node(s, deps))
     g.add_node("composer", lambda s: composer_node(s, deps))
-    g.add_edge(START, "planner")
+    g.add_edge(START, "router")
+    g.add_conditional_edges("router", route_from_router, ["planner", "analyst"])
     g.add_conditional_edges("planner", fan_out, ["analyst", "composer"])
     g.add_edge("analyst", "critic")
     g.add_conditional_edges("critic", route_after_critic, ["analyst", "composer"])
