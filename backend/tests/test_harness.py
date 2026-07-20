@@ -174,3 +174,53 @@ def test_harness_isolates_spans_across_stores(tmp_path):
     run_id_2 = result_rows_2[0]["run_id"]
     spans_2 = st2.spans_for_run(run_id_2)
     assert len(spans_2) > 0, "Second store should have spans recorded (bus was not one-shot)"
+
+
+def _models(router="gpt-4o-mini", judge="gpt-4o"):
+    return {
+        "router": router, "planner": "gpt-4o-mini", "analyst": "gpt-4o-mini",
+        "critic": "gpt-4o-mini", "composer": "gpt-4o-mini",
+    }, judge
+
+
+def test_config_snapshot_hash_distinguishes_router_and_judge_model(tmp_path):
+    """CONFIG-SNAPSHOT FIX (M4 final review): config_hash must uniquely identify a
+    config for regression tracking — two runs differing only in router model, or
+    only in judge_model, must NOT collide on config_hash. The recorded
+    config_json["models"] must equal exactly what run_eval was passed (source of
+    truth), not a re-read of settings().model_for.
+    """
+    st = Store(tmp_path / "t.db")
+    models_a, judge_a = _models(router="gpt-4o-mini")
+    models_b, judge_b = _models(router="gpt-4o")  # only the router differs
+
+    eval_id_a = run_eval(
+        st, _golden(tmp_path, 3), lambda: _deps(3), label="a", repo_root=tmp_path,
+        enforce_budget=False, models=models_a,
+    )
+    eval_id_b = run_eval(
+        st, _golden(tmp_path, 3), lambda: _deps(3), label="b", repo_root=tmp_path,
+        enforce_budget=False, models=models_b,
+    )
+    run_a = next(r for r in st.list_eval_runs() if r["id"] == eval_id_a)
+    run_b = next(r for r in st.list_eval_runs() if r["id"] == eval_id_b)
+    assert run_a["config_hash"] != run_b["config_hash"]
+    assert json.loads(run_a["config_json"])["models"] == models_a
+    assert json.loads(run_b["config_json"])["models"] == models_b
+
+    # Differ only in judge_model (models dict identical) — must also change the hash.
+    models_c, _ = _models(router="gpt-4o-mini")
+
+    def judge(_msgs):
+        return JudgeTurn(
+            clarity=4, uncertainty_honesty=4, chart_appropriateness=3,
+            methodological_soundness=5, rationale="fine",
+        ), U
+
+    eval_id_c = run_eval(
+        st, _golden(tmp_path, 3), lambda: _deps(3), judge=judge, label="c",
+        repo_root=tmp_path, enforce_budget=False, models=models_c, judge_model="gpt-4o-mini",
+    )
+    run_c = next(r for r in st.list_eval_runs() if r["id"] == eval_id_c)
+    assert run_c["config_hash"] != run_a["config_hash"]
+    assert json.loads(run_c["config_json"])["judge_model"] == "gpt-4o-mini"

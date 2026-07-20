@@ -75,12 +75,12 @@ def invoke_structured(
     return out["parsed"], usage
 
 
-def _structured_fn(role: str, schema: type[BaseModel]):
+def _structured_fn(role: str, schema: type[BaseModel], model: str | None = None):
     from langchain_openai import ChatOpenAI
 
     cfg = settings()
-    model = ChatOpenAI(model=cfg.model_for(role), temperature=0, api_key=cfg.openai_api_key)
-    runnable = model.with_structured_output(schema, include_raw=True)
+    llm = ChatOpenAI(model=model or cfg.model_for(role), temperature=0, api_key=cfg.openai_api_key)
+    runnable = llm.with_structured_output(schema, include_raw=True)
 
     def call(messages: list[BaseMessage]):
         return invoke_structured(runnable.invoke, messages, role)
@@ -88,14 +88,16 @@ def _structured_fn(role: str, schema: type[BaseModel]):
     return call
 
 
-def _real_compose() -> "ComposeFn":
+def _real_compose(model: str | None = None) -> "ComposeFn":
     from langchain_openai import ChatOpenAI
 
     cfg = settings()
-    model = ChatOpenAI(model=cfg.model_for("composer"), temperature=0, api_key=cfg.openai_api_key)
+    llm = ChatOpenAI(
+        model=model or cfg.model_for("composer"), temperature=0, api_key=cfg.openai_api_key
+    )
 
     def compose(messages: list[BaseMessage]) -> tuple[str, LLMUsage]:
-        response = model.invoke(messages)
+        response = llm.invoke(messages)
         return response.content, _usage_of(response)
 
     return compose
@@ -130,11 +132,16 @@ class GraphDeps:
             self.run_code = run_code
 
     @classmethod
-    def default(cls) -> "GraphDeps":
+    def default(cls, models: dict[str, str] | None = None) -> "GraphDeps":
+        """Wire the real models. `models`, if given, pins each role to an exact model
+        id (used by the M5 study to compare configs), bypassing `cheap_mode`'s
+        collapse — see `_structured_fn`/`_real_compose`'s `model or cfg.model_for(role)`.
+        """
+        models = models or {}
         return cls(
-            planner=_structured_fn("planner", PlannerTurn),
-            analyst_turn=_structured_fn("analyst", AnalystTurn),
-            critic_turn=_structured_fn("critic", CriticTurn),
-            compose=_real_compose(),
-            router=_structured_fn("router", RouterTurn),
+            planner=_structured_fn("planner", PlannerTurn, models.get("planner")),
+            analyst_turn=_structured_fn("analyst", AnalystTurn, models.get("analyst")),
+            critic_turn=_structured_fn("critic", CriticTurn, models.get("critic")),
+            compose=_real_compose(models.get("composer")),
+            router=_structured_fn("router", RouterTurn, models.get("router")),
         )

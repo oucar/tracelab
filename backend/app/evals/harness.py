@@ -17,6 +17,7 @@ from app.config import settings
 from app.evals.golden import REPO_ROOT, GoldenDataset
 from app.evals.judge import DIMENSIONS, JudgeFn, judge_answer
 from app.evals.scoring import score_tier1
+from app.evals.study import ROLES
 from app.runtime.events import bus
 from app.runtime.graph import execute_run
 from app.runtime.state import RunState
@@ -46,11 +47,22 @@ def git_sha() -> str:
         return "unknown"
 
 
-def config_snapshot(models: dict[str, str] | None) -> tuple[str, str]:
+def config_snapshot(
+    models: dict[str, str] | None, judge_model: str | None = None
+) -> tuple[str, str]:
+    """Snapshot the config that actually drove a run, for `config_hash` regression tracking.
+
+    When `models` is passed it is the source of truth (exactly what `deps_factory`
+    was built with) and is recorded verbatim — never re-read from `settings()`,
+    which could silently diverge from what the run actually used. `judge_model`
+    is recorded alongside since it varies independently of the five agent roles
+    (`ROLES` = router/planner/analyst/critic/composer) and must also be part of
+    the hash so two configs differing only in judge model don't collide.
+    """
     cfg = settings()
     snap = {
-        "models": models
-        or {r: cfg.model_for(r) for r in ("planner", "analyst", "critic", "composer")},
+        "models": models if models is not None else {r: cfg.model_for(r) for r in ROLES},
+        "judge_model": judge_model or cfg.judge_model,
         "alpha": cfg.alpha,
         "numeric_rel_tolerance": cfg.numeric_rel_tolerance,
         "cheap_mode": cfg.cheap_mode,
@@ -67,6 +79,7 @@ def run_eval(
     judge: JudgeFn | None = None,
     label: str = "",
     models: dict[str, str] | None = None,
+    judge_model: str | None = None,
     repo_root: Path = REPO_ROOT,
     enforce_budget: bool = True,
 ) -> str:
@@ -78,7 +91,7 @@ def run_eval(
     """
     _ensure_sink(st)
     eval_run_id = uuid.uuid4().hex[:12]
-    config_json, config_hash = config_snapshot(models)
+    config_json, config_hash = config_snapshot(models, judge_model)
     t_eval = time.time()
     scorable = passed = 0
     judge_totals: list[float] = []
