@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import config, datasets, runs
+from app.api import config, datasets, evals, runs
 from app.deps import store
 from app.runtime.events import bus
 
@@ -19,6 +19,7 @@ app.add_middleware(
 app.include_router(config.router)
 app.include_router(datasets.router)
 app.include_router(runs.router)
+app.include_router(evals.router)
 
 # Live span persistence: every AgentEvent lands in SQLite the moment it is
 # emitted, so a crash mid-run still leaves an inspectable partial trace.
