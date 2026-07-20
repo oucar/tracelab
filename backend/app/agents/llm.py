@@ -14,7 +14,7 @@ from typing import Callable
 from langchain_core.messages import BaseMessage, HumanMessage
 from pydantic import BaseModel
 
-from app.agents.schemas import AnalystTurn, CriticTurn, PlannerTurn
+from app.agents.schemas import AnalystTurn, CriticTurn, PlannerTurn, RouterTurn
 from app.config import settings
 from app.runtime.state import SandboxResult
 
@@ -106,6 +106,7 @@ AnalystFn = Callable[[list[BaseMessage]], tuple[AnalystTurn, LLMUsage]]
 CriticFn = Callable[[list[BaseMessage]], tuple[CriticTurn, LLMUsage]]
 ComposeFn = Callable[[list[BaseMessage]], tuple[str, LLMUsage]]
 SandboxFn = Callable[[str, str], SandboxResult]
+RouterFn = Callable[[list[BaseMessage]], tuple[RouterTurn, LLMUsage]]
 
 
 @dataclass
@@ -117,6 +118,10 @@ class GraphDeps:
     critic_turn: CriticFn
     compose: ComposeFn
     run_code: SandboxFn | None = None
+    # None means "route everything as multi_step" (legacy behavior, Task 13's
+    # router node falls back to it); kept last so existing positional/keyword
+    # GraphDeps constructions in tests stay valid without a router arg.
+    router: RouterFn | None = None
 
     def __post_init__(self) -> None:
         if self.run_code is None:
@@ -131,4 +136,5 @@ class GraphDeps:
             analyst_turn=_structured_fn("analyst", AnalystTurn),
             critic_turn=_structured_fn("critic", CriticTurn),
             compose=_real_compose(),
+            router=_structured_fn("router", RouterTurn),
         )
