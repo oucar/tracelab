@@ -43,6 +43,25 @@ def _cmd_run(args) -> int:
     return 0
 
 
+def _cmd_study(args) -> None:
+    from app.agents.llm import GraphDeps, _structured_fn
+    from app.agents.schemas import JudgeTurn
+    from app.deps import store
+    from app.evals.study import CONFIGS_DIR, load_study_config, run_study
+
+    configs = [
+        load_study_config(CONFIGS_DIR / f"{n.strip()}.yaml")
+        for n in args.configs.split(",")
+    ]
+    run_study(
+        store(), configs,
+        deps_factory_for=lambda cfg: (lambda: GraphDeps.default(models=cfg.models)),
+        judge_for=lambda cfg: None if args.no_judge
+        else _structured_fn("judge", JudgeTurn, model=cfg.judge_model),
+        golden_sets=load_golden(GOLDEN_DIR),
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m app.evals")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -66,6 +85,10 @@ def main() -> None:
 
     sub.add_parser("calibration", help="print the calibration report as JSON")
 
+    study = sub.add_parser("study", help="run the golden set across model configs")
+    study.add_argument("--configs", default="mini,strong-planner,strong-critic,strong")
+    study.add_argument("--no-judge", action="store_true")
+
     args = parser.parse_args()
     if args.cmd == "golden":
         if args.write:
@@ -87,6 +110,9 @@ def main() -> None:
             print("no labels file at backend/app/evals/labels/human_labels.yaml")
             sys.exit(1)
         print(json.dumps(calibration_report(store(), labels), indent=2))
+        return
+    if args.cmd == "study":
+        _cmd_study(args)
         return
 
 

@@ -15,6 +15,26 @@ def test_all_four_configs_load():
     assert mini.models["analyst"] == "gpt-4o-mini"
 
 
+def test_run_study_records_one_eval_run_per_config(tmp_path):
+    from app.evals.study import StudyConfig, run_study
+    from app.tracing.store import Store
+    from tests.test_harness import _deps, _golden
+
+    st = Store(tmp_path / "t.db")
+    configs = [
+        StudyConfig(name="a", models={r: "m" for r in
+                                      ("router", "planner", "analyst", "critic", "composer")}),
+        StudyConfig(name="b", models={r: "m" for r in
+                                      ("router", "planner", "analyst", "critic", "composer")}),
+    ]
+    golden = _golden(tmp_path, 3)
+    pairs = run_study(st, configs, lambda cfg: (lambda: _deps(3)), lambda cfg: None,
+                      repo_root=tmp_path, enforce_budget=False, golden_sets=golden)
+    assert [name for name, _ in pairs] == ["a", "b"]
+    labels = {r["label"] for r in st.list_eval_runs()}
+    assert labels == {"study:a", "study:b"}
+
+
 def test_default_deps_accept_model_override(monkeypatch):
     """GraphDeps.default(models=...) must not raise and must not read cheap_mode."""
     from app.agents.llm import GraphDeps
