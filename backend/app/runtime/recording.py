@@ -17,7 +17,7 @@ from collections import defaultdict
 from langchain_core.messages import BaseMessage
 
 from app.agents.llm import GraphDeps, LLMUsage
-from app.agents.schemas import AnalystTurn, CriticTurn, PlannerTurn
+from app.agents.schemas import AnalystTurn, CriticTurn, PlannerTurn, RouterTurn
 from app.runtime.state import SandboxResult
 from app.tracing.store import Store
 
@@ -84,6 +84,7 @@ def recording_deps(inner: GraphDeps, recorder: Recorder) -> GraphDeps:
         critic_turn=structured("critic", inner.critic_turn),
         compose=compose,
         run_code=run_code,
+        router=structured("router", inner.router) if inner.router is not None else None,
     )
 
 
@@ -131,10 +132,23 @@ def replay_deps(recordings: list[dict]) -> GraphDeps:
     def run_code(code: str, dataset_path: str) -> SandboxResult:
         return SandboxResult.model_validate(pop("sandbox", sandbox_key(code)))
 
+    def replay_router(messages):
+        key = request_key("router", messages)
+        with lock:
+            bucket = buckets.get(key)
+            if not bucket:
+                # runs recorded before the router joined the recorded boundary
+                # originally executed with router=None -> multi_step; reproduce that
+                # faithfully rather than raising a ReplayMiss.
+                return RouterTurn(route="multi_step", reason="no router recording"), replay_usage({})
+            rec = bucket.pop(0)
+        return RouterTurn.model_validate(rec["turn"]), replay_usage(rec)
+
     return GraphDeps(
         planner=structured("planner", PlannerTurn),
         analyst_turn=structured("analyst", AnalystTurn),
         critic_turn=structured("critic", CriticTurn),
         compose=compose,
         run_code=run_code,
+        router=replay_router,
     )

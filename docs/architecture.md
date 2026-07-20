@@ -270,15 +270,27 @@ A replayed call with no matching recording raises `ReplayMiss` rather than
 silently falling through to a live call — a replay that quietly diverges
 from the original run would be worse than one that fails loudly.
 
-**A known gap, stated honestly rather than glossed over:** `recording_deps`
-and `replay_deps` wrap `planner`, `analyst_turn`, `critic_turn`, and
-`compose`, but not `router`. A replayed `GraphDeps` therefore has
-`router=None`, which makes `router_node` fall back to `route="multi_step"`
-regardless of what the original run actually routed to. Replay of a
-`simple`-routed run today re-derives the same *analyst* recording (the
-`Send` target is identical either way) but takes the `multi_step` graph
-shape to get there. Worth fixing before replay is used to reproduce a
-routing bug specifically; not yet done.
+**The router is part of the recorded boundary too.** `recording_deps` wraps
+`router` the same way it wraps `planner`, `analyst_turn`, `critic_turn`, and
+`compose` — a live run's routing decision is recorded under the `router`
+key, and `POST /runs/{id}/replay` reproduces that exact decision rather than
+re-deriving it. This also closed a live-path bug: `app/api/runs.py` wraps
+every live run through `recording_deps(GraphDeps.default(), ...)`, and
+before this fix that wrapper silently dropped `router` on the floor
+(defaulting it to `None`), so `router_node` fell back to
+`route="multi_step"` on every real run regardless of what
+`GraphDeps.default()`'s router model actually decided — adaptive routing
+only ever ran in the eval harness and tests, which construct `GraphDeps`
+directly.
+
+`replay_deps` is tolerant of recordings made before this fix: those runs
+have no `router` key at all (the router wasn't recorded yet), and since
+they executed with `router=None` originally, they took the
+`route="multi_step"` path. Replaying them reproduces that faithfully — a
+missing router key returns `RouterTurn(route="multi_step", ...)` rather
+than raising `ReplayMiss`, since `ReplayMiss` should mean "this replay
+diverged from the original run," not "this recording predates a field we
+added later."
 
 Together the two layers give you: (a) a debugger for a nondeterministic
 system — checkpoint-level for "where did this run get to," recording-level

@@ -1,12 +1,14 @@
 """Recording captures the nondeterministic boundary: LLM turns + sandbox runs."""
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from app.agents.llm import GraphDeps, LLMUsage
-from app.agents.schemas import AnalystTurn, CriticFinding, CriticTurn, PlannerTurn
+from app.agents.schemas import AnalystTurn, CriticFinding, CriticTurn, PlannerTurn, RouterTurn
+from app.runtime.events import bus
 from app.runtime.graph import execute_run
 from app.runtime.recording import Recorder, recording_deps
 from app.runtime.state import Claim, PlanStep, RunState, SandboxResult
@@ -104,3 +106,47 @@ def test_identical_requests_get_increasing_seq(tmp_path):
     rec.record("llm", "same-key", {"n": 2})
     rows = store.recordings_for_run("run-seq")
     assert [(r["seq"], r["response"]["n"]) for r in rows] == [(0, 1), (1, 2)]
+
+
+# ── router joins the recorded boundary (regression: M4's router was dead on the
+# live path because recording_deps/replay_deps never wired it through) ────────
+
+
+def stub_router(route: str):
+    def fn(messages):
+        return RouterTurn(route=route, reason="stub"), U
+
+    return fn
+
+
+def test_recording_deps_runs_router_live(dataset, tmp_path):
+    """Wrapping deps with a router in recording_deps must actually invoke it —
+    not silently fall back to the router=None / multi_step behavior."""
+    store = Store(tmp_path / "rec-router-live.db")
+    deps = replace(stub_deps(), router=stub_router("simple"))
+    execute_run(
+        make_state(dataset, "run-router-live"),
+        recording_deps(deps, Recorder(store, "run-router-live")),
+    )
+    events = bus.history("run-router-live")
+    router_events = [e for e in events if e.agent == "router"]
+    assert router_events, "router node did not run"
+    assert router_events[0].payload["route"] == "simple"
+
+
+def test_recording_deps_records_the_router_call(dataset, tmp_path):
+    """The router turn is captured alongside the other structured LLM calls."""
+    store = Store(tmp_path / "rec-router-count.db")
+    # "statistical" routes through the planner exactly like the router=None
+    # fallback, so this run's shape matches
+    # test_recording_captures_every_llm_and_sandbox_call's baseline (5 llm +
+    # 1 sandbox) plus exactly one extra recording for the router call itself.
+    deps = replace(stub_deps(), router=stub_router("statistical"))
+    execute_run(
+        make_state(dataset, "run-router-count"),
+        recording_deps(deps, Recorder(store, "run-router-count")),
+    )
+    rows = store.recordings_for_run("run-router-count")
+    kinds = [r["kind"] for r in rows]
+    assert kinds.count("sandbox") == 1
+    assert kinds.count("llm") == 6  # router + planner + 2 analyst turns + critic + composer
