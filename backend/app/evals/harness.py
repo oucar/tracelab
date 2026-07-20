@@ -22,22 +22,17 @@ from app.runtime.graph import execute_run
 from app.runtime.state import RunState
 from app.tracing.store import Store, utc_midnight
 
-_sink_registered = False
-
 
 def _ensure_sink(st: Store) -> None:
-    """Wire the bus to `st` exactly once per process.
+    """Wire the bus to `st`; EventBus.add_sink dedup handles the rest.
 
-    Real usage (the CLI, tests within a run) always sweeps against a single
-    Store; re-registering the same store's sink on every `run_eval` call would
-    be harmless (add_span is INSERT OR REPLACE) but wasteful, and guarding
-    with a module flag is what keeps this honest if `run_eval` is ever called
-    in a loop.
+    EventBus.add_sink checks if the bound method is already registered (`if sink
+    not in self._sinks`), so re-registering the same store's sink is safe.
+    Notably, stale sinks from earlier Stores may still receive spans (writes to
+    old test DBs), but correctness only requires the CURRENT store to persist
+    them; orphan writes are harmless.
     """
-    global _sink_registered
-    if not _sink_registered:
-        bus.add_sink(st.add_span)
-        _sink_registered = True
+    bus.add_sink(st.add_span)
 
 
 def git_sha() -> str:
