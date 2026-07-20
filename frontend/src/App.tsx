@@ -2,6 +2,7 @@ import { AppBar, Box, Button, Chip, CssBaseline, Stack, ThemeProvider, Toolbar, 
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { BrowserRouter, Link as RouterLink, Route, Routes } from "react-router-dom";
 import { getConfig } from "./lib/api";
+import { EvalsScreen } from "./pages/EvalsScreen";
 import { RunsDashboard } from "./pages/RunsDashboard";
 import { RunView } from "./pages/RunView";
 import { Workbench } from "./pages/Workbench";
@@ -47,6 +48,9 @@ function Nav() {
         <Button size="small" color="inherit" component={RouterLink} to="/runs">
           Runs
         </Button>
+        <Button size="small" color="inherit" component={RouterLink} to="/evals">
+          Evals
+        </Button>
         <Box sx={{ flexGrow: 1 }} />
         <ConfigChips />
       </Toolbar>
@@ -65,6 +69,7 @@ export default function App() {
             <Route path="/" element={<Workbench />} />
             <Route path="/runs" element={<RunsDashboard />} />
             <Route path="/runs/:runId" element={<RunView />} />
+            <Route path="/evals" element={<EvalsScreen />} />
           </Routes>
         </BrowserRouter>
       </ThemeProvider>
