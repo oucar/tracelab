@@ -1,0 +1,9 @@
+name: mini
+description: gpt-4o-mini everywhere — the cost floor
+models:
+  router: gpt-4o-mini
+  planner: gpt-4o-mini
+  analyst: gpt-4o-mini
+  critic: gpt-4o-mini
+  composer: gpt-4o-mini
+judge_model: gpt-4o
