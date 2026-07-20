@@ -124,3 +124,53 @@ def test_harness_survives_a_crashing_question(tmp_path):
     row = st.eval_results(eval_id)[0]
     assert row["tier1_passed"] == 0
     assert "boom" in row["tier1_detail"] or "failed" in row["tier1_detail"].lower()
+
+
+def test_harness_isolates_spans_across_stores(tmp_path):
+    """Verify that each Store's eval run records spans in its own database."""
+    # Create subdirectories for each eval
+    a_dir = tmp_path / "a"
+    b_dir = tmp_path / "b"
+    a_dir.mkdir()
+    b_dir.mkdir()
+
+    # First eval against store A
+    st1 = Store(tmp_path / "a.db")
+    eval_id1 = run_eval(
+        st1,
+        _golden(a_dir, 3),
+        lambda: _deps(3),
+        label="eval1",
+        repo_root=a_dir,
+        enforce_budget=False,
+    )
+
+    # Get the run_id from the first eval
+    run1 = st1.list_eval_runs()[0]
+    assert run1["id"] == eval_id1
+    result_rows_1 = st1.eval_results(eval_id1)
+    assert len(result_rows_1) > 0
+    run_id_1 = result_rows_1[0]["run_id"]
+    spans_1 = st1.spans_for_run(run_id_1)
+    # Stub deps have cost 0, so check span count > 0
+    assert len(spans_1) > 0, "First store should have spans recorded"
+
+    # Second eval against store B
+    st2 = Store(tmp_path / "b.db")
+    eval_id2 = run_eval(
+        st2,
+        _golden(b_dir, 3),
+        lambda: _deps(3),
+        label="eval2",
+        repo_root=b_dir,
+        enforce_budget=False,
+    )
+
+    # Get the run_id from the second eval and verify spans are in ST2, not ST1
+    run2 = st2.list_eval_runs()[0]
+    assert run2["id"] == eval_id2
+    result_rows_2 = st2.eval_results(eval_id2)
+    assert len(result_rows_2) > 0
+    run_id_2 = result_rows_2[0]["run_id"]
+    spans_2 = st2.spans_for_run(run_id_2)
+    assert len(spans_2) > 0, "Second store should have spans recorded (bus was not one-shot)"
