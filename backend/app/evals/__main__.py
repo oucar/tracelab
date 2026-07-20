@@ -43,6 +43,27 @@ def _cmd_run(args) -> int:
     return 0
 
 
+def _cmd_report(args) -> None:
+    from pathlib import Path
+
+    from app.deps import store
+    from app.evals.calibration import calibration_report, load_labels
+    from app.evals.report import calibration_markdown, study_markdown, study_rows, tradeoff_png
+
+    st = store()
+    rows = study_rows(st)
+    print("## Tradeoff study")
+    print(study_markdown(rows))
+    print()
+    print("## Judge calibration")
+    labels = load_labels()
+    report = calibration_report(st, labels) if labels else {}
+    print(calibration_markdown(report))
+    if args.png:
+        tradeoff_png(rows, Path(args.png))
+        print(f"\nwrote {args.png}")
+
+
 def _cmd_study(args) -> None:
     from app.agents.llm import GraphDeps, _structured_fn
     from app.agents.schemas import JudgeTurn
@@ -89,6 +110,9 @@ def main() -> None:
     study.add_argument("--configs", default="mini,strong-planner,strong-critic,strong")
     study.add_argument("--no-judge", action="store_true")
 
+    report = sub.add_parser("report", help="print study + calibration markdown for the README")
+    report.add_argument("--png", default="", help="also write the tradeoff scatter to this path")
+
     args = parser.parse_args()
     if args.cmd == "golden":
         if args.write:
@@ -113,6 +137,9 @@ def main() -> None:
         return
     if args.cmd == "study":
         _cmd_study(args)
+        return
+    if args.cmd == "report":
+        _cmd_report(args)
         return
 
 
