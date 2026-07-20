@@ -1,6 +1,7 @@
 """Malformed structured output gets exactly one repair retry (plan §3.1)."""
 
 import pytest
+from pydantic import ValidationError
 
 from app.agents.llm import LLMUsage, MalformedOutputError, invoke_structured
 from app.agents.schemas import AnalystTurn
@@ -50,3 +51,26 @@ def test_second_malformed_output_raises():
     bad = {"raw": raw(), "parsed": None, "parsing_error": ValueError("nope")}
     with pytest.raises(MalformedOutputError):
         invoke_structured(lambda messages: bad, [], "analyst")
+
+
+def test_router_turn_schema():
+    from app.agents.schemas import RouterTurn
+
+    turn = RouterTurn(route="simple", reason="single aggregation")
+    assert turn.route == "simple"
+    with pytest.raises(ValidationError):
+        RouterTurn(route="hard", reason="x")
+
+
+def test_graph_deps_router_defaults_to_none():
+    from app.agents.llm import GraphDeps, LLMUsage
+    from app.agents.schemas import AnalystTurn, CriticTurn, PlannerTurn  # noqa: F401
+
+    u = LLMUsage()
+    deps = GraphDeps(
+        planner=lambda m: None,
+        analyst_turn=lambda m: None,
+        critic_turn=lambda m: None,
+        compose=lambda m: ("", u),
+    )
+    assert deps.router is None

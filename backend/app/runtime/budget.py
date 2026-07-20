@@ -38,6 +38,7 @@ class AgentBudget:
             "analyst": cfg.max_analyst_iterations + 1,
             "critic": cfg.max_critic_iterations + 1,
             "composer": 1,
+            "router": 1,
         }
         tool_caps = {"analyst": cfg.max_analyst_iterations, "critic": cfg.max_critic_iterations}
         return cls(
