@@ -32,3 +32,9 @@ def test_markdown_and_png(tmp_path):
     out = tmp_path / "tradeoff.png"
     tradeoff_png(rows, out)
     assert out.stat().st_size > 1000
+
+
+def test_tradeoff_png_empty_rows_is_noop(tmp_path):
+    out = tmp_path / "x.png"
+    tradeoff_png([], out)
+    assert not out.exists()
