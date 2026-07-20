@@ -54,7 +54,13 @@ function AgentNode({ data }: NodeProps<AgentFlowNode>) {
 }
 
 const nodeTypes = { agent: AgentNode };
-const COLUMN_X: Record<string, number> = { planner: 0, analyst: 280, critic: 560, composer: 840 };
+const COLUMN_X: Record<string, number> = {
+  router: 0,
+  planner: 220,
+  analyst: 460,
+  critic: 700,
+  composer: 940,
+};
 
 export function AgentGraph({
   nodes,
