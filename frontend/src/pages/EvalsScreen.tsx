@@ -6,6 +6,7 @@ import { LineChart } from "@mui/x-charts/LineChart";
 import { getCalibration, getEvalRun, listEvalRuns } from "../lib/api";
 import type { EvalResultRow, EvalRunSummary } from "../lib/types";
 import { CalibrationGrid } from "../components/CalibrationGrid";
+import { TradeoffChart } from "../components/TradeoffChart";
 
 const runColumns: GridColDef<EvalRunSummary>[] = [
   {
@@ -100,6 +101,8 @@ export function EvalsScreen() {
           Evals
         </Typography>
         {runs.error != null && <Alert severity="error">{String(runs.error)}</Alert>}
+
+        <TradeoffChart runs={runs.data ?? []} />
 
         <Paper variant="outlined" sx={{ p: 2 }}>
           <Typography variant="subtitle2" gutterBottom>
