@@ -14,7 +14,7 @@ export interface AgentEvent {
   run_id: string;
   span_id: string;
   parent_span_id: string | null;
-  agent: "planner" | "analyst" | "critic" | "composer" | "system";
+  agent: "router" | "planner" | "analyst" | "critic" | "composer" | "system";
   type: EventType;
   payload: Record<string, unknown>;
   tokens_in: number;
