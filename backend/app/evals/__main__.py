@@ -60,6 +60,12 @@ def main() -> None:
     run.add_argument("--gate-margin", type=float, default=0.05)
     run.add_argument("--write-baseline", action="store_true")
 
+    tmpl = sub.add_parser("label-template",
+                          help="print a YAML labeling template for an eval run")
+    tmpl.add_argument("eval_run_id")
+
+    sub.add_parser("calibration", help="print the calibration report as JSON")
+
     args = parser.parse_args()
     if args.cmd == "golden":
         if args.write:
@@ -68,6 +74,20 @@ def main() -> None:
         return
     if args.cmd == "run":
         sys.exit(_cmd_run(args))
+    if args.cmd == "label-template":
+        from app.deps import store
+        from app.evals.calibration import label_template
+        print(label_template(store(), args.eval_run_id))
+        return
+    if args.cmd == "calibration":
+        from app.deps import store
+        from app.evals.calibration import calibration_report, load_labels
+        labels = load_labels()
+        if labels is None:
+            print("no labels file at backend/app/evals/labels/human_labels.yaml")
+            sys.exit(1)
+        print(json.dumps(calibration_report(store(), labels), indent=2))
+        return
 
 
 if __name__ == "__main__":
