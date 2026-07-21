@@ -46,6 +46,12 @@ judge_model: gpt-4o
 - Produces: `StudyConfig(name: str, description: str, models: dict[str, str], judge_model: str)` (Pydantic), `load_study_config(path: Path) -> StudyConfig`, `CONFIGS_DIR = REPO_ROOT / "backend" / "configs"`.
 - `GraphDeps.default(models: dict[str, str] | None = None)` — when `models` is given, each `_structured_fn(role, schema, model=models[role])` uses that exact model id, bypassing `cheap_mode`'s collapse (`model or cfg.model_for(role)` inside `_structured_fn`; same for the compose ChatOpenAI and the router). M4's harness already accepts `models=` and records it in `config_json`; now also pass it: `run_eval(..., models=...)` must call `GraphDeps.default` with it when the caller passes the default factory — implement by giving the harness an explicit `deps_factory=lambda: GraphDeps.default(models=cfg.models)` at the call site in Task 2 (no harness change needed).
 
+- **CONFIG-SNAPSHOT FIX (mandated by the M4 final review — do this in Task 1, with a test).** M4's `harness.config_snapshot(models)` currently builds its `models` dict from only `("planner","analyst","critic","composer")` and records the passed-in `models` without any guarantee the run actually used them. That is now a correctness bug: (a) two configs differing only in `router_model`/`judge_model` collide on `config_hash`; (b) the recorded config can lie about what ran. Fix in `backend/app/evals/harness.py`:
+  - Extend the snapshot roster to all five agent roles **plus** the judge: `("router","planner","analyst","critic","composer")` for `models`, and record `judge_model` alongside (from the study config when provided, else `settings().judge_model`).
+  - When `models` is passed, the snapshot's `models` MUST be exactly that dict (the source of truth the deps use), not a re-read of `settings().model_for` — so the hash reflects the real run. When `models` is None, fall back to `{r: cfg.model_for(r) for r in ROLES}` as today.
+  - Add a test asserting two `run_eval` calls with `models` differing only in `router` (or `judge_model`) produce **different** `config_hash` values, and that the recorded `config_json["models"]` equals what was passed. Keep it keyless (stub deps).
+  - This unblocks the study: `config_hash` must uniquely identify a config for regression tracking and the tradeoff table to be meaningful.
+
 - [ ] **Step 1: Write the failing test**
 
 ```python
