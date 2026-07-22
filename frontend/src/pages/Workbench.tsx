@@ -1,13 +1,13 @@
-import SendIcon from "@mui/icons-material/Send";
+import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
 import {
   Alert,
   Box,
   Button,
   CircularProgress,
   Container,
+  InputBase,
   Paper,
   Stack,
-  TextField,
   Typography,
 } from "@mui/material";
 import { useMutation } from "@tanstack/react-query";
@@ -36,16 +36,18 @@ export function Workbench() {
   });
 
   const busy = status === "running" || ask.isPending;
+  const canAsk = Boolean(dataset) && question.trim().length > 0 && !busy;
 
   return (
-    <Container maxWidth="md" sx={{ py: 4 }}>
+    <Container maxWidth="md" sx={{ py: 5 }}>
       <Stack spacing={3}>
         <Box>
-          <Typography variant="h4" fontWeight={700}>
-            tracelab
+          <Typography variant="h4" sx={{ fontWeight: 750 }}>
+            Workbench
           </Typography>
-          <Typography color="text.secondary">
-            An agentic data analyst you can watch think.
+          <Typography sx={{ color: "text.secondary", mt: 0.5 }}>
+            Ask a question in plain English. Watch a team of agents plan, run Python, and verify
+            every number before you see it.
           </Typography>
         </Box>
 
@@ -56,57 +58,93 @@ export function Workbench() {
         />
         {upload.isError && <Alert severity="error">{String(upload.error)}</Alert>}
 
-        <Paper variant="outlined" sx={{ p: 2 }}>
-          <Stack direction="row" spacing={1}>
-            <TextField
-              fullWidth
-              size="small"
-              placeholder={
-                dataset ? "Ask a question about this dataset…" : "Upload a dataset first"
+        {/* Command-bar-style ask input. */}
+        <Paper
+          variant="outlined"
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: 1,
+            px: 1.5,
+            py: 0.5,
+            bgcolor: "var(--surface-2)",
+            transition: "border-color 150ms ease, box-shadow 150ms ease",
+            "&:focus-within": {
+              borderColor: "primary.main",
+              boxShadow: "0 0 0 3px rgba(122,162,247,0.15)",
+            },
+            opacity: dataset ? 1 : 0.6,
+          }}
+        >
+          <Box sx={{ color: "var(--ink-3)", fontFamily: "monospace", fontWeight: 700, pl: 0.5 }}>
+            ›
+          </Box>
+          <InputBase
+            fullWidth
+            multiline
+            maxRows={4}
+            placeholder={dataset ? "Ask a question about this dataset…" : "Upload a dataset first"}
+            disabled={!dataset || busy}
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey && canAsk) {
+                e.preventDefault();
+                ask.mutate();
               }
-              disabled={!dataset || busy}
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && dataset && question.trim() && !busy) ask.mutate();
-              }}
-            />
-            <Button
-              variant="contained"
-              endIcon={busy ? <CircularProgress size={16} color="inherit" /> : <SendIcon />}
-              disabled={!dataset || !question.trim() || busy}
-              onClick={() => ask.mutate()}
-            >
-              Ask
-            </Button>
-          </Stack>
+            }}
+            sx={{ fontSize: "0.95rem", py: 1 }}
+          />
+          <Button
+            variant="contained"
+            disabled={!canAsk}
+            onClick={() => ask.mutate()}
+            endIcon={
+              busy ? (
+                <CircularProgress size={15} color="inherit" />
+              ) : (
+                <ArrowForwardRoundedIcon sx={{ fontSize: 18 }} />
+              )
+            }
+            sx={{ flexShrink: 0 }}
+          >
+            Ask
+          </Button>
         </Paper>
         {ask.isError && <Alert severity="error">{String(ask.error)}</Alert>}
 
         {status !== "idle" && (
           <Stack spacing={2}>
-            <Stack direction="row" spacing={1} alignItems="center">
-              <Typography variant="h6" sx={{ flexGrow: 1 }}>
-                Run
+            <Stack direction="row" spacing={1.25} alignItems="center">
+              {status === "running" && (
+                <Box
+                  className="pulse"
+                  sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: "primary.main" }}
+                />
+              )}
+              <Typography variant="subtitle2" sx={{ color: "text.secondary" }}>
+                Trace · {status === "running" ? "live" : status}
               </Typography>
+              <Box sx={{ flexGrow: 1 }} />
               {runId && (
                 <Button size="small" component={RouterLink} to={`/runs/${runId}`}>
                   Open run view →
                 </Button>
               )}
             </Stack>
+
             <CostMeter events={events} />
-            <EventLog events={events} />
-            {status === "running" && (
-              <Stack direction="row" spacing={1} alignItems="center">
-                <CircularProgress size={16} />
-                <Typography variant="body2" color="text.secondary">
-                  agents working…
-                </Typography>
-              </Stack>
-            )}
+
+            <Paper variant="outlined" sx={{ p: 2 }}>
+              <EventLog events={events} />
+            </Paper>
+
             {status === "finished" &&
-              (final ? <AnswerPanel final={final} /> : <Alert severity="success">{answer}</Alert>)}
+              (final ? (
+                <AnswerPanel final={final} />
+              ) : (
+                <Alert severity="success">{answer}</Alert>
+              ))}
             {status === "error" && <Alert severity="error">{error}</Alert>}
           </Stack>
         )}
