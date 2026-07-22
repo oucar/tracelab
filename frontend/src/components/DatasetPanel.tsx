@@ -1,6 +1,8 @@
+import CloseFullscreenRoundedIcon from "@mui/icons-material/CloseFullscreenRounded";
+import OpenInFullRoundedIcon from "@mui/icons-material/OpenInFullRounded";
 import TableChartOutlinedIcon from "@mui/icons-material/TableChartOutlined";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
-import { Box, Button, Paper, Stack, Typography } from "@mui/material";
+import { Box, Button, IconButton, Paper, Stack, Tooltip, Typography } from "@mui/material";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { useRef, useState } from "react";
 import type { Dataset } from "../lib/types";
@@ -10,6 +12,8 @@ interface Props {
   dataset: Dataset | null;
   uploading: boolean;
   onUpload: (file: File) => void;
+  wide?: boolean;
+  onToggleWide?: () => void;
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
@@ -44,7 +48,7 @@ const gridSx = {
   "& .MuiDataGrid-filler, & .MuiDataGrid-scrollbarFiller": { bgcolor: "transparent" },
 } as const;
 
-export function DatasetPanel({ dataset, uploading, onUpload }: Props) {
+export function DatasetPanel({ dataset, uploading, onUpload, wide, onToggleWide }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
 
@@ -64,9 +68,22 @@ export function DatasetPanel({ dataset, uploading, onUpload }: Props) {
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>
         <Typography variant="subtitle2">Dataset</Typography>
         {dataset && (
-          <Button startIcon={<UploadFileIcon />} size="small" onClick={pick} disabled={uploading}>
-            {uploading ? "Uploading…" : "Replace"}
-          </Button>
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            <Button startIcon={<UploadFileIcon />} size="small" onClick={pick} disabled={uploading}>
+              {uploading ? "Uploading…" : "Replace"}
+            </Button>
+            {onToggleWide && (
+              <Tooltip title={wide ? "Collapse to reading width" : "Expand to full width"}>
+                <IconButton size="small" onClick={onToggleWide} sx={{ color: "text.secondary" }}>
+                  {wide ? (
+                    <CloseFullscreenRoundedIcon sx={{ fontSize: 17 }} />
+                  ) : (
+                    <OpenInFullRoundedIcon sx={{ fontSize: 17 }} />
+                  )}
+                </IconButton>
+              </Tooltip>
+            )}
+          </Stack>
         )}
       </Stack>
       <input
@@ -88,7 +105,7 @@ export function DatasetPanel({ dataset, uploading, onUpload }: Props) {
             <Stat label="rows" value={dataset.profile.rows.toLocaleString()} />
             <Stat label="columns" value={String(dataset.profile.columns.length)} />
           </Stack>
-          <Box sx={{ height: 280 }}>
+          <Box sx={{ height: wide ? 460 : 280, transition: "height 300ms var(--ease-out)" }}>
             <DataGrid rows={rows} columns={columns} density="compact" hideFooter disableColumnMenu sx={gridSx} />
           </Box>
         </>

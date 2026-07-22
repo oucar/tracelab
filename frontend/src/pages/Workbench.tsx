@@ -4,7 +4,6 @@ import {
   Box,
   Button,
   CircularProgress,
-  Container,
   InputBase,
   Paper,
   Stack,
@@ -22,9 +21,12 @@ import { createRun, uploadDataset } from "../lib/api";
 import type { Dataset } from "../lib/types";
 import { useRunStore } from "../store/runStore";
 
+const READING = 920;
+
 export function Workbench() {
   const [dataset, setDataset] = useState<Dataset | null>(null);
   const [question, setQuestion] = useState("");
+  const [wide, setWide] = useState(false);
 
   const { runId, status, events, answer, final, error, start } = useRunStore();
   useRunStream(runId);
@@ -39,25 +41,43 @@ export function Workbench() {
   const canAsk = Boolean(dataset) && question.trim().length > 0 && !busy;
 
   return (
-    <Container maxWidth="md" sx={{ py: 5 }}>
-      <Stack spacing={3}>
-        <Box>
-          <Typography variant="h4" sx={{ fontWeight: 750 }}>
-            Workbench
-          </Typography>
-          <Typography sx={{ color: "text.secondary", mt: 0.5 }}>
-            Ask a question in plain English. Watch a team of agents plan, run Python, and verify
-            every number before you see it.
-          </Typography>
-        </Box>
+    <Box sx={{ py: 5, px: { xs: 2, sm: 3, md: 4 } }}>
+      {/* Hero — reading width. */}
+      <Box sx={{ maxWidth: READING, mx: "auto", mb: 3 }}>
+        <Typography variant="h4" sx={{ fontWeight: 750 }}>
+          Workbench
+        </Typography>
+        <Typography sx={{ color: "text.secondary", mt: 0.5 }}>
+          Ask a question in plain English. Watch a team of agents plan, run Python, and verify every
+          number before you see it.
+        </Typography>
+      </Box>
 
+      {/* Dataset — expands to full width on toggle. */}
+      <Box
+        sx={{
+          maxWidth: wide ? "100%" : READING,
+          mx: "auto",
+          mb: 3,
+          transition: "max-width 320ms var(--ease-out)",
+        }}
+      >
         <DatasetPanel
           dataset={dataset}
           uploading={upload.isPending}
           onUpload={(f) => upload.mutate(f)}
+          wide={wide}
+          onToggleWide={() => setWide((w) => !w)}
         />
-        {upload.isError && <Alert severity="error">{String(upload.error)}</Alert>}
+        {upload.isError && (
+          <Alert severity="error" sx={{ mt: 2 }}>
+            {String(upload.error)}
+          </Alert>
+        )}
+      </Box>
 
+      {/* Ask + run — reading width. */}
+      <Stack spacing={3} sx={{ maxWidth: READING, mx: "auto" }}>
         {/* Command-bar-style ask input. */}
         <Paper
           variant="outlined"
@@ -149,6 +169,6 @@ export function Workbench() {
           </Stack>
         )}
       </Stack>
-    </Container>
+    </Box>
   );
 }
