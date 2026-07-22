@@ -3,6 +3,7 @@ import type { AgentEvent } from "../lib/types";
 
 const AGENT_COLORS: Record<string, "default" | "primary" | "secondary" | "warning" | "success"> = {
   system: "default",
+  router: "default",
   planner: "secondary",
   analyst: "primary",
   critic: "warning",
@@ -30,9 +31,14 @@ function summary(e: AgentEvent): string {
         e.payload.reason ? ` (${e.payload.reason})` : ""
       }`;
     case "handoff":
-      return e.payload.retry_steps !== undefined
-        ? `retry → step(s) ${(e.payload.retry_steps as number[]).join(", ")}`
-        : `fan-out → ${(e.payload.steps as number[]).length} analyst(s)`;
+      // The router emits {route, reason, to}; the critic {retry_steps}; the planner {steps}.
+      if (e.payload.route !== undefined)
+        return `route: ${String(e.payload.route)} → ${String(e.payload.to ?? "")}`;
+      if (e.payload.retry_steps !== undefined)
+        return `retry → step(s) ${(e.payload.retry_steps as number[]).join(", ")}`;
+      if (e.payload.steps !== undefined)
+        return `fan-out → ${(e.payload.steps as number[]).length} analyst(s)`;
+      return "handoff";
     case "run_finished":
       return "run finished";
     case "error":
