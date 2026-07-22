@@ -17,8 +17,10 @@
     "@mui/x-charts": "^7.23.0",
     "@mui/x-data-grid": "^7.23.0",
     "@tanstack/react-query": "^5.60.0",
+    "@xyflow/react": "^12.11.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-router-dom": "^7.18.1",
     "zod": "^4.4.3",
     "zustand": "^5.0.0"
   },

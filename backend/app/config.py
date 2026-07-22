@@ -31,6 +31,14 @@ class Settings(BaseSettings):
     planner_model: str = "gpt-4o-mini"
     critic_model: str = "gpt-4o-mini"
     max_plan_steps: int = 4
+
+    # M4 — complexity router. Always mini: a strong model for a 3-way
+    # simple/multi_step/statistical classification is exactly the waste
+    # routing exists to remove, so it never scales up with cheap_mode off.
+    router_model: str = "gpt-4o-mini"
+
+    # M4 — tier-2 scoring.
+    judge_model: str = "gpt-4o"
     max_retries: int = 1  # bounded retry after a critic discrepancy
     max_critic_iterations: int = 3  # critic sandbox executions
     numeric_rel_tolerance: float = 0.01
@@ -45,13 +53,19 @@ class Settings(BaseSettings):
     uploads_dir: Path = DATA_DIR / "uploads"
 
     def model_for(self, role: str) -> str:
+        if role == "router":
+            # Router stays mini even with cheap_mode off: a strong model for a
+            # 3-way classification is exactly the waste routing exists to remove.
+            return self.router_model
         if self.cheap_mode:
+            # In cheap mode, collapse all roles to analyst_model (including judge).
             return self.analyst_model
         return {
             "planner": self.planner_model,
             "analyst": self.analyst_model,
             "critic": self.critic_model,
             "composer": self.composer_model,
+            "judge": self.judge_model,
         }.get(role, self.analyst_model)
 
 

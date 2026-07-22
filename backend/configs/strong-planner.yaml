@@ -1,0 +1,9 @@
+name: strong-planner
+description: strong brain, cheap hands — gpt-4o planner, mini everywhere else
+models:
+  router: gpt-4o-mini
+  planner: gpt-4o
+  analyst: gpt-4o-mini
+  critic: gpt-4o-mini
+  composer: gpt-4o-mini
+judge_model: gpt-4o

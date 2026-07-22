@@ -9,10 +9,12 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
+from app.agents.llm import GraphDeps
 from app.config import settings
 from app.deps import store
 from app.runtime.events import EventType, bus
 from app.runtime.graph import execute_run
+from app.runtime.recording import Recorder, recording_deps, replay_deps
 from app.runtime.state import RunState
 from app.tracing.store import utc_midnight
 
@@ -24,8 +26,10 @@ class AskRequest(BaseModel):
     question: str
 
 
-def _execute(run_id: str, dataset: dict, question: str) -> None:
-    """Runs in a worker thread; persists every event, then finalizes the run row."""
+def _execute(run_id: str, dataset: dict, question: str, deps: GraphDeps | None = None) -> None:
+    """Runs in a worker thread; recording on for real runs, off for replays."""
+    if deps is None:
+        deps = recording_deps(GraphDeps.default(), Recorder(store(), run_id))
     state = RunState(
         run_id=run_id,
         question=question,
@@ -33,7 +37,7 @@ def _execute(run_id: str, dataset: dict, question: str) -> None:
         dataset_profile=dataset["profile"],
     )
     try:
-        final = execute_run(state)
+        final = execute_run(state, deps)
         result = final.final.model_dump_json() if final.final else ""
         store().finish_run(run_id, final.final_answer, "finished", result)
     except Exception as exc:
@@ -61,6 +65,25 @@ async def create_run(req: AskRequest) -> dict:
     return {"run_id": run_id}
 
 
+@router.post("/{run_id}/replay")
+async def replay_run(run_id: str) -> dict:
+    """Re-execute a past run offline from its recordings. Free, keyless, deterministic."""
+    source = store().get_run(run_id)
+    if source is None:
+        raise HTTPException(404, "run not found")
+    recordings = store().recordings_for_run(run_id)
+    if not recordings:
+        raise HTTPException(400, "run has no recordings to replay")
+    dataset = store().get_dataset(source["dataset_id"])
+    if dataset is None:
+        raise HTTPException(404, "dataset no longer exists")
+    new_id = store().create_run(source["dataset_id"], source["question"], replay_of=run_id)
+    asyncio.get_running_loop().run_in_executor(
+        None, _execute, new_id, dataset, source["question"], replay_deps(recordings)
+    )
+    return {"run_id": new_id}
+
+
 @router.get("/{run_id}/events")
 async def run_events(run_id: str) -> EventSourceResponse:
     if store().get_run(run_id) is None:
@@ -77,7 +100,7 @@ async def run_events(run_id: str) -> EventSourceResponse:
 
 @router.get("")
 def list_runs() -> list[dict]:
-    return store().list_runs()
+    return store().list_runs_with_stats()
 
 
 @router.get("/{run_id}")

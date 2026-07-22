@@ -9,7 +9,14 @@ from pydantic import BaseModel, Field
 from app.runtime.reconcile import CriticFinding
 from app.runtime.state import Claim, PlanStep
 
-__all__ = ["AnalystTurn", "PlannerTurn", "CriticTurn", "CriticFinding"]
+__all__ = [
+    "AnalystTurn",
+    "PlannerTurn",
+    "CriticTurn",
+    "CriticFinding",
+    "JudgeTurn",
+    "RouterTurn",
+]
 
 
 class PlannerTurn(BaseModel):
@@ -53,3 +60,20 @@ class CriticTurn(BaseModel):
         default_factory=list,
         description="One finding per claim (required when action='finish').",
     )
+
+
+class JudgeTurn(BaseModel):
+    """Tier-2 rubric scores, 1 (poor) to 5 (excellent)."""
+
+    clarity: int = Field(ge=1, le=5)
+    uncertainty_honesty: int = Field(ge=1, le=5)
+    chart_appropriateness: int = Field(ge=1, le=5)
+    methodological_soundness: int = Field(ge=1, le=5)
+    rationale: str = ""
+
+
+class RouterTurn(BaseModel):
+    """Complexity routing decision made at graph entry."""
+
+    route: Literal["simple", "multi_step", "statistical"]
+    reason: str = ""

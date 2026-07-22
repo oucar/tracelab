@@ -1,0 +1,9 @@
+name: strong-critic
+description: cheap work, strong verification — gpt-4o critic, mini everywhere else
+models:
+  router: gpt-4o-mini
+  planner: gpt-4o-mini
+  analyst: gpt-4o-mini
+  critic: gpt-4o
+  composer: gpt-4o-mini
+judge_model: gpt-4o

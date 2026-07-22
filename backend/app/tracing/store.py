@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS runs (
     status TEXT NOT NULL DEFAULT 'running',   -- running | finished | error
     answer TEXT DEFAULT '',
     result TEXT NOT NULL DEFAULT '',          -- JSON FinalAnswer (claims, charts, verdicts)
+    replay_of TEXT NOT NULL DEFAULT '',       -- run_id this run replays, '' if not a replay
     created_at REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS spans (
@@ -51,7 +52,44 @@ CREATE TABLE IF NOT EXISTS datasets (
     profile TEXT NOT NULL,
     created_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS recordings (
+    run_id TEXT NOT NULL REFERENCES runs(id),
+    key TEXT NOT NULL,          -- sha256 of the request content (role + messages / code)
+    seq INTEGER NOT NULL,       -- per-key ordinal: identical requests replay in order
+    kind TEXT NOT NULL,         -- 'llm' | 'sandbox'
+    response TEXT NOT NULL,     -- JSON: recorded output + usage
+    PRIMARY KEY (run_id, key, seq)
+);
 CREATE INDEX IF NOT EXISTS idx_spans_run ON spans(run_id, started_at);
+CREATE TABLE IF NOT EXISTS eval_runs (
+    id TEXT PRIMARY KEY,
+    created_at REAL NOT NULL,
+    label TEXT NOT NULL DEFAULT '',
+    git_sha TEXT NOT NULL DEFAULT '',
+    config_hash TEXT NOT NULL DEFAULT '',
+    config_json TEXT NOT NULL DEFAULT '{}',
+    questions_total INTEGER NOT NULL DEFAULT 0,
+    tier1_scorable INTEGER NOT NULL DEFAULT 0,
+    tier1_passed INTEGER NOT NULL DEFAULT 0,
+    judge_avg REAL,
+    cost_usd REAL NOT NULL DEFAULT 0,
+    duration_ms INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS eval_results (
+    eval_run_id TEXT NOT NULL,
+    question_id TEXT NOT NULL,
+    run_id TEXT NOT NULL DEFAULT '',
+    dataset TEXT NOT NULL DEFAULT '',
+    tags TEXT NOT NULL DEFAULT '[]',
+    tier1_scorable INTEGER NOT NULL,
+    tier1_passed INTEGER NOT NULL,
+    tier1_detail TEXT NOT NULL DEFAULT '',
+    judge TEXT,
+    judge_rationale TEXT NOT NULL DEFAULT '',
+    cost_usd REAL NOT NULL DEFAULT 0,
+    duration_ms INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (eval_run_id, question_id)
+);
 """
 
 
@@ -71,6 +109,8 @@ class Store:
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(runs)")}
         if "result" not in columns:
             conn.execute("ALTER TABLE runs ADD COLUMN result TEXT NOT NULL DEFAULT ''")
+        if "replay_of" not in columns:
+            conn.execute("ALTER TABLE runs ADD COLUMN replay_of TEXT NOT NULL DEFAULT ''")
 
     def _conn(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
@@ -107,12 +147,13 @@ class Store:
         return out
 
     # ── runs ──────────────────────────────────────────────────────────────
-    def create_run(self, dataset_id: str, question: str) -> str:
+    def create_run(self, dataset_id: str, question: str, replay_of: str = "") -> str:
         run_id = uuid.uuid4().hex[:12]
         with self._conn() as conn:
             conn.execute(
-                "INSERT INTO runs (id, dataset_id, question, created_at) VALUES (?, ?, ?, ?)",
-                (run_id, dataset_id, question, time.time()),
+                "INSERT INTO runs (id, dataset_id, question, replay_of, created_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (run_id, dataset_id, question, replay_of, time.time()),
             )
         return run_id
 
@@ -134,6 +175,40 @@ class Store:
         with self._conn() as conn:
             rows = conn.execute("SELECT * FROM runs ORDER BY created_at DESC").fetchall()
         return [dict(r) for r in rows]
+
+    def list_runs_with_stats(self) -> list[dict]:
+        """Dashboard rows: run columns + cost/token/latency rollups + claim quality."""
+        sql = """
+        SELECT r.id, r.dataset_id, r.question, r.status, r.replay_of, r.created_at, r.result,
+               COALESCE(s.cost_usd, 0) AS cost_usd,
+               COALESCE(s.tokens_in, 0) AS tokens_in,
+               COALESCE(s.tokens_out, 0) AS tokens_out,
+               COALESCE(s.duration_ms, 0) AS duration_ms
+        FROM runs r
+        LEFT JOIN (
+            SELECT run_id,
+                   SUM(cost_usd) AS cost_usd,
+                   SUM(tokens_in) AS tokens_in,
+                   SUM(tokens_out) AS tokens_out,
+                   CAST((MAX(started_at + duration_ms / 1000.0) - MIN(started_at)) * 1000
+                        AS INTEGER) AS duration_ms
+            FROM spans GROUP BY run_id
+        ) s ON s.run_id = r.id
+        ORDER BY r.created_at DESC
+        """
+        with self._conn() as conn:
+            rows = conn.execute(sql).fetchall()
+        out = []
+        for row in rows:
+            d = dict(row)
+            claims = []
+            result = d.pop("result")
+            if result:
+                claims = json.loads(result).get("claims", [])
+            d["claims_total"] = len(claims)
+            d["claims_verified"] = sum(1 for c in claims if c.get("status") == "verified")
+            out.append(d)
+        return out
 
     # ── spans ─────────────────────────────────────────────────────────────
     def add_span(self, event: AgentEvent) -> None:
@@ -174,3 +249,107 @@ class Store:
                 (since_ts,),
             ).fetchone()
         return float(row["c"])
+
+    # ── recordings (deterministic replay) ─────────────────────────────────
+    def add_recording(self, run_id: str, key: str, seq: int, kind: str, response: dict) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO recordings VALUES (?, ?, ?, ?, ?)",
+                (run_id, key, seq, kind, json.dumps(response)),
+            )
+
+    def recordings_for_run(self, run_id: str) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM recordings WHERE run_id = ? ORDER BY key, seq", (run_id,)
+            ).fetchall()
+        out = []
+        for row in rows:
+            d = dict(row)
+            d["response"] = json.loads(d["response"])
+            out.append(d)
+        return out
+
+    # ── eval runs and results ─────────────────────────────────────────────
+    def add_eval_run(
+        self,
+        *,
+        id: str,
+        created_at: float,
+        label: str,
+        git_sha: str,
+        config_hash: str,
+        config_json: str,
+        questions_total: int,
+        tier1_scorable: int,
+        tier1_passed: int,
+        judge_avg: float | None,
+        cost_usd: float,
+        duration_ms: int,
+    ) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO eval_runs VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    id,
+                    created_at,
+                    label,
+                    git_sha,
+                    config_hash,
+                    config_json,
+                    questions_total,
+                    tier1_scorable,
+                    tier1_passed,
+                    judge_avg,
+                    cost_usd,
+                    duration_ms,
+                ),
+            )
+
+    def add_eval_result(
+        self,
+        *,
+        eval_run_id: str,
+        question_id: str,
+        run_id: str,
+        dataset: str,
+        tags_json: str,
+        tier1_scorable: bool,
+        tier1_passed: bool,
+        tier1_detail: str,
+        judge_json: str | None,
+        judge_rationale: str,
+        cost_usd: float,
+        duration_ms: int,
+    ) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO eval_results VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    eval_run_id,
+                    question_id,
+                    run_id,
+                    dataset,
+                    tags_json,
+                    int(tier1_scorable),
+                    int(tier1_passed),
+                    tier1_detail,
+                    judge_json,
+                    judge_rationale,
+                    cost_usd,
+                    duration_ms,
+                ),
+            )
+
+    def list_eval_runs(self) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute("SELECT * FROM eval_runs ORDER BY created_at DESC").fetchall()
+        return [dict(r) for r in rows]
+
+    def eval_results(self, eval_run_id: str) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM eval_results WHERE eval_run_id = ? ORDER BY question_id",
+                (eval_run_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
