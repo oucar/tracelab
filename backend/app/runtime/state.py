@@ -51,7 +51,15 @@ class Claim(BaseModel):
 class PlanStep(BaseModel):
     id: int = 0
     description: str
-    method: Literal["descriptive", "mean_comparison", "correlation"] = "descriptive"
+    method: Literal[
+        "descriptive",
+        "mean_comparison",
+        "correlation",
+        "regression",
+        "clustering",
+        "timeseries_backtest",
+        "anomaly_detection",
+    ] = "descriptive"
 
 
 class Plan(BaseModel):
@@ -113,6 +121,9 @@ class RunState(BaseModel):
     dataset_path: str
     dataset_profile: dict[str, Any] = Field(default_factory=dict)
     root_span_id: str = ""  # span_id of the run_started event; parents the whole tree
+
+    route: str = ""  # set by router_node: "simple" | "multi_step" | "statistical"
+    route_reason: str = ""
 
     plan: Plan | None = None
     planner_failed: bool = False

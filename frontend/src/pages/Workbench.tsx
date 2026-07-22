@@ -12,7 +12,9 @@ import {
 } from "@mui/material";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
+import { Link as RouterLink } from "react-router-dom";
 import { AnswerPanel } from "../components/AnswerPanel";
+import { CostMeter } from "../components/CostMeter";
 import { DatasetPanel } from "../components/DatasetPanel";
 import { EventLog } from "../components/EventLog";
 import { useRunStream } from "../hooks/useRunStream";
@@ -83,7 +85,17 @@ export function Workbench() {
 
         {status !== "idle" && (
           <Stack spacing={2}>
-            <Typography variant="h6">Run</Typography>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Typography variant="h6" sx={{ flexGrow: 1 }}>
+                Run
+              </Typography>
+              {runId && (
+                <Button size="small" component={RouterLink} to={`/runs/${runId}`}>
+                  Open run view →
+                </Button>
+              )}
+            </Stack>
+            <CostMeter events={events} />
             <EventLog events={events} />
             {status === "running" && (
               <Stack direction="row" spacing={1} alignItems="center">

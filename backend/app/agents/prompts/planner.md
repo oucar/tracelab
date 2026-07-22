@@ -9,6 +9,15 @@ For each step pick the method an analyst should use:
   ("is fare higher on weekends?"). Triggers a significance test with effect size.
 - `correlation` — the relationship between two numeric columns. Triggers a
   correlation test with significance.
+- `regression` — how one numeric outcome depends on one or more numeric predictors
+  ("what drives price?"). Triggers OLS with diagnostics.
+- `clustering` — discovering natural groups of rows ("segment the customers").
+  Triggers standardized k-means with a PCA projection chart.
+- `timeseries_backtest` — forecasting a value ordered by a date/time column
+  ("how will sales develop?"). Triggers a time-ordered train/holdout backtest
+  against a naive baseline.
+- `anomaly_detection` — finding unusual rows or outliers ("any suspicious
+  transactions?"). Triggers robust outlier scoring.
 
 Rules:
 

@@ -1,0 +1,9 @@
+name: strong
+description: gpt-4o everywhere — the quality ceiling
+models:
+  router: gpt-4o
+  planner: gpt-4o
+  analyst: gpt-4o
+  critic: gpt-4o
+  composer: gpt-4o
+judge_model: gpt-4o
