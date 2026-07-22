@@ -12,6 +12,8 @@
   "dependencies": {
     "@emotion/react": "^11.13.0",
     "@emotion/styled": "^11.13.0",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
     "@mui/icons-material": "^6.4.0",
     "@mui/material": "^6.4.0",
     "@mui/x-charts": "^7.23.0",
