@@ -438,3 +438,50 @@ def test_multi_finding_run_still_uses_composer(dataset):
     )
     execute_run(make_state(dataset, "run-multi"), deps)
     assert compose_calls
+
+
+def test_composer_is_told_about_produced_charts(dataset):
+    """Regression: the composer denied a chart that existed because its context
+    never mentioned the produced charts. It must now be told about them."""
+    from app.runtime.chartspec import ChartSpec
+    from app.runtime.graph import composer_node
+    from app.runtime.state import AnalystResult, RunState, Verdict
+
+    spec = ChartSpec(
+        kind="bar",
+        title="Top 10 companies by frequency",
+        x="company",
+        y=["count"],
+        data=[{"company": "Acme", "count": 2}],
+        source_columns=["company"],
+    )
+    claim = Claim(id="c1", step_id=1, text="Acme appears 2 times", kind="numeric", value=2)
+    result = AnalystResult(
+        step_id=1, findings="Acme appears 2 times.", claims=[claim], chart_specs=[spec]
+    )
+    state = RunState(
+        run_id="run-compose",
+        question="can you generate a cool graph?",
+        dataset_path=str(dataset),
+        route="multi_step",  # not "simple" -> real composer LLM path, no fold
+        analyst_results=[result],
+        verdicts=[Verdict(claim_id="c1", status="verified")],
+    )
+
+    seen: dict = {}
+
+    def spy_compose(messages):
+        seen["prompt"] = "\n".join(str(m.content) for m in messages)
+        return ("Acme appears twice — see the bar chart.", U)
+
+    deps = GraphDeps(
+        planner=lambda m: None,
+        analyst_turn=lambda m: None,
+        critic_turn=lambda m: None,
+        compose=spy_compose,
+    )
+    out = composer_node(state, deps)
+
+    assert "chart" in seen["prompt"].lower()
+    assert "Top 10 companies by frequency" in seen["prompt"]
+    assert len(out["final"].charts) == 1

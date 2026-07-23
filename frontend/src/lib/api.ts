@@ -62,3 +62,7 @@ export async function getEvalRun(
 export async function getCalibration(): Promise<CalibrationReport> {
   return json(await fetch("/api/evals/calibration"));
 }
+
+export async function getSuggestions(datasetId: string): Promise<{ suggestions: string[] }> {
+  return json(await fetch(`/api/datasets/${datasetId}/suggestions`));
+}

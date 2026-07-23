@@ -27,6 +27,15 @@ Rules:
   relationship, or significance — they trigger statistical rigor downstream.
 - Each description must be self-contained (name the exact columns involved);
   the analyst executing it sees only that description, not the other steps.
+- Identifier and index columns carry NO analytical signal: a row index (e.g.
+  "Index"), a unique key ("Customer Id"), or a near-unique free-text column
+  (names, emails, phone numbers). Never propose a correlation, regression, or
+  mean-comparison on them — correlating a row index with anything is meaningless.
+- If the question is vague or open-ended ("show me something interesting", "a cool
+  graph", "analyze this"), choose the analyses that reveal the most genuine
+  structure the data actually supports — real distributions, group differences, or
+  correlations between MEANINGFUL numeric columns — and prefer steps that produce a
+  chart. Do not pad the plan with filler analyses on identifier columns.
 
 Dataset profile (precomputed):
 

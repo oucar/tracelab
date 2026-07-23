@@ -59,3 +59,22 @@ def list_datasets() -> list[dict]:
         {"id": d["id"], "name": d["name"], "profile": d["profile"]}
         for d in store().list_datasets()
     ]
+
+
+@router.get("/{dataset_id}/suggestions")
+def dataset_suggestions(dataset_id: str) -> dict:
+    """Starter questions for the dataset — a cheap mini-model call, best-effort."""
+    from app.agents.suggest import suggest_questions
+
+    dataset = store().get_dataset(dataset_id)
+    if dataset is None:
+        raise HTTPException(404, "dataset not found")
+    profile = dataset["profile"]
+    if isinstance(profile, str):
+        import json
+
+        profile = json.loads(profile)
+    try:
+        return {"suggestions": suggest_questions(profile)}
+    except Exception:  # noqa: BLE001 — suggestions are a nicety; never fail the UI
+        return {"suggestions": []}

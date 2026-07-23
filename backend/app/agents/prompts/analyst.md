@@ -17,6 +17,10 @@ Rules:
   three exploratory ones.
 - Set `random_state=0` on every stochastic method (KMeans, IsolationForest,
   sampling). The critic must be able to reproduce your numbers exactly.
+- Identifier and index columns (a row index, a unique ID, near-unique free text)
+  have no analytical meaning. Never correlate or regress on them. If your step
+  points at such a column, analyze the meaningful structure that IS present
+  (distributions, real group differences) rather than forcing an empty result.
 
 Method playbooks (follow the one for your assigned method):
 
