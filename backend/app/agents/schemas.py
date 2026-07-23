@@ -16,7 +16,14 @@ __all__ = [
     "CriticFinding",
     "JudgeTurn",
     "RouterTurn",
+    "SuggestionsTurn",
 ]
+
+
+class SuggestionsTurn(BaseModel):
+    """Suggested starter questions for a freshly uploaded dataset."""
+
+    questions: list[str] = Field(min_length=1, max_length=4)
 
 
 class PlannerTurn(BaseModel):

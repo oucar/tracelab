@@ -10,7 +10,13 @@ const statusColor = { running: "info", finished: "success", error: "error" } as 
 
 export function RunsDashboard() {
   const navigate = useNavigate();
-  const runs = useQuery({ queryKey: ["runs"], queryFn: listRuns, refetchInterval: 5_000 });
+  const runs = useQuery({
+    queryKey: ["runs"],
+    queryFn: listRuns,
+    // Poll fast while anything is running, back off when everything is settled.
+    refetchInterval: (query) =>
+      (query.state.data ?? []).some((r) => r.status === "running") ? 2_000 : 10_000,
+  });
   const replay = useMutation({
     mutationFn: replayRun,
     onSuccess: ({ run_id }) => navigate(`/runs/${run_id}`),

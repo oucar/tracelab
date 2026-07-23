@@ -9,7 +9,7 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import { AnswerPanel } from "../components/AnswerPanel";
@@ -17,7 +17,7 @@ import { CostMeter } from "../components/CostMeter";
 import { DatasetPanel } from "../components/DatasetPanel";
 import { EventLog } from "../components/EventLog";
 import { useRunStream } from "../hooks/useRunStream";
-import { createRun, uploadDataset } from "../lib/api";
+import { createRun, getSuggestions, uploadDataset } from "../lib/api";
 import type { Dataset } from "../lib/types";
 import { useRunStore } from "../store/runStore";
 
@@ -35,6 +35,12 @@ export function Workbench() {
   const ask = useMutation({
     mutationFn: () => createRun(dataset!.id, question),
     onSuccess: ({ run_id }) => start(run_id),
+  });
+  const suggestions = useQuery({
+    queryKey: ["suggestions", dataset?.id],
+    queryFn: () => getSuggestions(dataset!.id),
+    enabled: Boolean(dataset),
+    staleTime: Infinity, // one mini-model call per dataset
   });
 
   const busy = status === "running" || ask.isPending;
@@ -132,6 +138,41 @@ export function Workbench() {
           </Button>
         </Paper>
         {ask.isError && <Alert severity="error">{String(ask.error)}</Alert>}
+
+        {dataset && status === "idle" && (suggestions.data?.suggestions.length ?? 0) > 0 && (
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
+            <Typography variant="caption" sx={{ color: "text.disabled", mr: 0.25 }}>
+              Try
+            </Typography>
+            {suggestions.data!.suggestions.map((q) => (
+              <Box
+                key={q}
+                component="button"
+                onClick={() => setQuestion(q)}
+                sx={{
+                  font: "inherit",
+                  fontSize: "0.78rem",
+                  color: "text.secondary",
+                  bgcolor: "var(--surface-2)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 999,
+                  px: 1.25,
+                  py: 0.5,
+                  cursor: "pointer",
+                  textAlign: "left",
+                  transition: "color 150ms ease, border-color 150ms ease, background-color 150ms ease",
+                  "&:hover": {
+                    color: "text.primary",
+                    borderColor: "primary.main",
+                    bgcolor: "rgba(122,162,247,0.06)",
+                  },
+                }}
+              >
+                {q}
+              </Box>
+            ))}
+          </Stack>
+        )}
 
         {status !== "idle" && (
           <Stack spacing={2}>

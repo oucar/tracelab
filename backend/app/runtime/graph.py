@@ -581,6 +581,15 @@ def composer_node(state: RunState, deps: GraphDeps) -> dict:
             if vc.detail:
                 line += f" ({vc.detail})"
             parts.append(line)
+        if charts:
+            chart_lines = [
+                f"- {c.kind} chart: {c.title}" if c.title else f"- {c.kind} chart" for c in charts
+            ]
+            parts.append(
+                "Charts already produced and rendered in the UI beside your answer "
+                "(reference them; never claim no visualization exists):\n"
+                + "\n".join(chart_lines)
+            )
         context = "\n\n".join(parts)
 
     answer, usage = deps.compose(
