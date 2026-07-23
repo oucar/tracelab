@@ -116,6 +116,22 @@ pre {
   }
 }
 
+/* Suggestion chips cascade in gently rather than popping. */
+@keyframes chip-in {
+  from {
+    opacity: 0;
+    transform: translateY(9px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.chip-in {
+  animation: chip-in 440ms var(--ease-out) both;
+}
+
 /* Each event/span slides in as it streams — motion that conveys "it's happening". */
 .trace-in {
   animation: trace-in 380ms var(--ease-out) both;
@@ -134,7 +150,8 @@ pre {
 @media (prefers-reduced-motion: reduce) {
   .trace-in,
   .pulse,
-  .skeleton {
+  .skeleton,
+  .chip-in {
     animation: none;
   }
   *,

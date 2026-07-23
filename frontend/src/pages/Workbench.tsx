@@ -141,13 +141,19 @@ export function Workbench() {
 
         {dataset && status === "idle" && (suggestions.data?.suggestions.length ?? 0) > 0 && (
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
-            <Typography variant="caption" sx={{ color: "text.disabled", mr: 0.25 }}>
+            <Typography
+              className="chip-in"
+              variant="caption"
+              sx={{ color: "text.disabled", mr: 0.25 }}
+            >
               Try
             </Typography>
-            {suggestions.data!.suggestions.map((q) => (
+            {suggestions.data!.suggestions.map((q, i) => (
               <Box
                 key={q}
                 component="button"
+                className="chip-in"
+                style={{ animationDelay: `${i * 90}ms` }}
                 onClick={() => setQuestion(q)}
                 sx={{
                   font: "inherit",
