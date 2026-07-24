@@ -7,18 +7,40 @@ the analysis, writes and runs Python in a sandbox, and a critic independently
 re-derives every number before it renders. Every run is traced, replayable,
 costed, and scored by an LLM judge.
 
-**[demo GIF placeholder — see owner checklist]** · [60-second video — placeholder,
-recorded at M5] · [blog post — placeholder, "I calibrated my LLM judge"]
+> Most agent demos show you the answer. **tracelab shows you the reasoning, the
+> verification, the cost, and the receipts.**
 
-Most agent demos show you the answer. tracelab shows you the reasoning, the
-verification, and the receipts — that's the whole pitch, one line: **the trace
-is the product, not the answer.**
+![Watching the agents think — the live trace](docs/assets/screenshots/01-trace-live.jpg)
 
-There's no hosted demo, and that's a judgment call, not an oversight: an app
-that runs LLM-written code and bills per question is a cost and abuse
-liability with near-zero hiring upside. It runs locally, in one command,
-against your own OpenAI key — recruiters evaluate the README, the GIF, and
-the demo video, not a URL. See [Run locally](#run-locally).
+## See it work
+
+**1 — Ask.** Drop a CSV, get an auto-profile and column-aware suggested questions.
+
+![Ask a question, with suggested starters](docs/assets/screenshots/02-ask-suggestions.jpg)
+
+**2 — Watch it think.** Router → planner → analysts → critic → composer streams live, each
+agent lighting up on the trace with its cost ticking up in real time (the hero image above).
+
+**3 — Verify.** Every numeric claim is independently re-derived by the critic and badged
+`verified`; statistical claims carry a methodology chip (test, p-value, effect size). The
+agent graph and per-agent cost sit right beside the answer.
+
+![The agent graph and the verified-claims ledger](docs/assets/screenshots/03-verify-graph-claims.jpg)
+
+**4 — Chart.** Analysts emit charts as validated specs (not raw code), so a chart is just
+another piece of verified structured output — rendered natively and referenced by the answer.
+
+![A verified answer with a native chart](docs/assets/screenshots/04-chart.jpg)
+
+**5 — Measure everything.** Every run is stored with its cost, latency, tokens, and
+verified-claim ratio — and can be replayed offline, deterministically and for free.
+
+![The runs dashboard](docs/assets/screenshots/05-runs-dashboard.jpg)
+
+There's no hosted demo, and that's a judgment call, not an oversight: an app that runs
+LLM-written code and bills per question is a cost-and-abuse liability with near-zero hiring
+upside. It runs locally, in one command, against your own OpenAI key. See
+[Run locally](#run-locally).
 
 ---
 
