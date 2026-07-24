@@ -274,10 +274,17 @@ def analyst_node(task: AnalystTask | dict, deps: GraphDeps) -> dict:
     chart_rejections: list[str] = []
 
     def failure(reason: str) -> dict:
+        # A step can fail to FINISH cleanly yet still have produced a valid,
+        # accepted chart — never discard it. The composer surfaces it honestly.
         return {
             "analyst_results": [
                 AnalystResult(
-                    step_id=step.id, iterations=iterations, failed=True, failure_reason=reason
+                    step_id=step.id,
+                    iterations=iterations,
+                    chart_specs=chart_specs,
+                    chart_rejections=chart_rejections,
+                    failed=True,
+                    failure_reason=reason,
                 )
             ]
         }

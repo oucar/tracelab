@@ -485,3 +485,52 @@ def test_composer_is_told_about_produced_charts(dataset):
     assert "chart" in seen["prompt"].lower()
     assert "Top 10 companies by frequency" in seen["prompt"]
     assert len(out["final"].charts) == 1
+
+
+def test_charts_survive_a_step_that_never_finishes(dataset):
+    """Regression: an analyst that loops without ever emitting `finish` still keeps
+    the chart it produced — the failure path must not discard chart_specs."""
+    from app.runtime.graph import analyst_node
+    from app.runtime.state import AnalystTask, PlanStep, SandboxResult
+
+    chart_artifact = {
+        "name": "chart_countries",
+        "kind": "json",
+        "data": {
+            "kind": "bar",
+            "title": "Customers by country",
+            "x": "country",
+            "y": ["count"],
+            "data": [{"country": "Liechtenstein", "count": 12}],
+            "source_columns": ["country"],
+        },
+    }
+
+    def never_finishes(_messages):
+        return AnalystTurn(action="run_code", code="print('again')", findings="", claims=[]), U
+
+    def fake_run_code(code, _path):
+        return SandboxResult(code=code, stdout="ok", artifacts=[chart_artifact])
+
+    deps = GraphDeps(
+        planner=lambda m: None,
+        analyst_turn=never_finishes,
+        critic_turn=lambda m: None,
+        compose=lambda m: ("", U),
+        run_code=fake_run_code,
+    )
+    task = AnalystTask(
+        run_id="run-noloop",
+        question="which countries have the most customers?",
+        dataset_path=str(dataset),
+        dataset_profile={"columns": [{"name": "country"}]},
+        root_span_id="root",
+        step=PlanStep(id=1, description="count customers by country", method="descriptive"),
+    )
+
+    out = analyst_node(task, deps)
+    result = out["analyst_results"][0]
+
+    assert result.failed is True  # it never finished
+    assert result.chart_specs, "a produced chart must survive a failed step"
+    assert result.chart_specs[0].title == "Customers by country"
