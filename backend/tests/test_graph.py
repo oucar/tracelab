@@ -438,3 +438,99 @@ def test_multi_finding_run_still_uses_composer(dataset):
     )
     execute_run(make_state(dataset, "run-multi"), deps)
     assert compose_calls
+
+
+def test_composer_is_told_about_produced_charts(dataset):
+    """Regression: the composer denied a chart that existed because its context
+    never mentioned the produced charts. It must now be told about them."""
+    from app.runtime.chartspec import ChartSpec
+    from app.runtime.graph import composer_node
+    from app.runtime.state import AnalystResult, RunState, Verdict
+
+    spec = ChartSpec(
+        kind="bar",
+        title="Top 10 companies by frequency",
+        x="company",
+        y=["count"],
+        data=[{"company": "Acme", "count": 2}],
+        source_columns=["company"],
+    )
+    claim = Claim(id="c1", step_id=1, text="Acme appears 2 times", kind="numeric", value=2)
+    result = AnalystResult(
+        step_id=1, findings="Acme appears 2 times.", claims=[claim], chart_specs=[spec]
+    )
+    state = RunState(
+        run_id="run-compose",
+        question="can you generate a cool graph?",
+        dataset_path=str(dataset),
+        route="multi_step",  # not "simple" -> real composer LLM path, no fold
+        analyst_results=[result],
+        verdicts=[Verdict(claim_id="c1", status="verified")],
+    )
+
+    seen: dict = {}
+
+    def spy_compose(messages):
+        seen["prompt"] = "\n".join(str(m.content) for m in messages)
+        return ("Acme appears twice — see the bar chart.", U)
+
+    deps = GraphDeps(
+        planner=lambda m: None,
+        analyst_turn=lambda m: None,
+        critic_turn=lambda m: None,
+        compose=spy_compose,
+    )
+    out = composer_node(state, deps)
+
+    assert "chart" in seen["prompt"].lower()
+    assert "Top 10 companies by frequency" in seen["prompt"]
+    assert len(out["final"].charts) == 1
+
+
+def test_charts_survive_a_step_that_never_finishes(dataset):
+    """Regression: an analyst that loops without ever emitting `finish` still keeps
+    the chart it produced — the failure path must not discard chart_specs."""
+    from app.runtime.graph import analyst_node
+    from app.runtime.state import AnalystTask, PlanStep, SandboxResult
+
+    chart_artifact = {
+        "name": "chart_countries",
+        "kind": "json",
+        "data": {
+            "kind": "bar",
+            "title": "Customers by country",
+            "x": "country",
+            "y": ["count"],
+            "data": [{"country": "Liechtenstein", "count": 12}],
+            "source_columns": ["country"],
+        },
+    }
+
+    def never_finishes(_messages):
+        return AnalystTurn(action="run_code", code="print('again')", findings="", claims=[]), U
+
+    def fake_run_code(code, _path):
+        return SandboxResult(code=code, stdout="ok", artifacts=[chart_artifact])
+
+    deps = GraphDeps(
+        planner=lambda m: None,
+        analyst_turn=never_finishes,
+        critic_turn=lambda m: None,
+        compose=lambda m: ("", U),
+        run_code=fake_run_code,
+    )
+    task = AnalystTask(
+        run_id="run-noloop",
+        question="which countries have the most customers?",
+        dataset_path=str(dataset),
+        dataset_profile={"columns": [{"name": "country"}]},
+        root_span_id="root",
+        step=PlanStep(id=1, description="count customers by country", method="descriptive"),
+    )
+
+    out = analyst_node(task, deps)
+    result = out["analyst_results"][0]
+
+    assert result.failed is True  # it never finished
+    assert result.chart_specs, "a produced chart must survive a failed step"
+    assert result.chart_specs[0].title == "Customers by country"

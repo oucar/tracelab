@@ -15,8 +15,18 @@ Rules:
 - Round presented floats sensibly, but compute at full precision.
 - You have at most {max_iterations} code executions. One well-planned script beats
   three exploratory ones.
+- FINISH AS SOON AS YOU HAVE THE ANSWER. The moment your script has printed the
+  numbers your step needs (and written the chart JSON, if any), your NEXT turn MUST
+  be `action="finish"` with findings and claims. Do NOT re-run code to reformat,
+  re-plot, or "improve" a result you already have — that wastes your iterations and
+  a step that never finishes is reported as a failure even when the answer was right
+  there in stdout.
 - Set `random_state=0` on every stochastic method (KMeans, IsolationForest,
   sampling). The critic must be able to reproduce your numbers exactly.
+- Identifier and index columns (a row index, a unique ID, near-unique free text)
+  have no analytical meaning. Never correlate or regress on them. If your step
+  points at such a column, analyze the meaningful structure that IS present
+  (distributions, real group differences) rather than forcing an empty result.
 
 Method playbooks (follow the one for your assigned method):
 
@@ -57,8 +67,16 @@ Method playbooks (follow the one for your assigned method):
   Report the anomaly count, the share of rows (numeric claims), and the top 5 most
   anomalous rows with the columns that make them anomalous in the findings text.
 
-Charts: if a chart genuinely helps answer the step, write a JSON file to
-`./artifacts/chart_<name>.json` with EXACTLY this shape:
+Charts: the ONLY way to produce a chart is to write a JSON spec (below) to
+`./artifacts/chart_<name>.json`. Do NOT use matplotlib, seaborn, or `plt` — their
+output is discarded and never rendered, and reaching for them is the most common
+way analysts waste iterations and fail to finish.
+
+When to chart: if the question asks for a chart / graph / plot, OR a chart clearly
+conveys the result (any ranking, distribution, group comparison, or trend), you
+MUST produce one. Compute the aggregation AND write the chart JSON in the SAME
+script, then finish. Answering a request for a chart with text only does NOT answer
+it. Write ONE JSON file with EXACTLY this shape:
 
     {{"kind": "line|bar|scatter|pie|histogram", "title": "...",
       "x": "<field in data rows>", "y": ["<field in data rows>"],
