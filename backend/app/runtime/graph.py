@@ -242,6 +242,7 @@ def analyst_node(task: AnalystTask | dict, deps: GraphDeps) -> dict:
     budget = AgentBudget.for_role("analyst")
     step = task.step
     columns = [c.get("name", "") for c in task.dataset_profile.get("columns", [])]
+    wants_chart = any(k in task.question.lower() for k in ("chart", "graph", "plot", "visuali"))
 
     messages: list = [
         SystemMessage(
@@ -370,6 +371,24 @@ def analyst_node(task: AnalystTask | dict, deps: GraphDeps) -> dict:
             )
         if rejections:
             feedback += "\nRejected charts:\n" + "\n".join(rejections)
+        if result.exit_code == 0 and result.stdout.strip() and not rejections:
+            # Deterministic pressure so gpt-4o-mini doesn't loop re-running near-identical
+            # code and never emit `finish`. If the user asked for a chart and none exists
+            # yet, steer to produce it in ONE more script; otherwise, finish now.
+            if wants_chart and not chart_specs:
+                feedback += (
+                    "\n\nYour script succeeded, but the user asked for a CHART and none "
+                    "has been written yet. In ONE more script, recompute the values and "
+                    "write the chart JSON to ./artifacts/chart_<name>.json (a JSON spec, "
+                    "NOT matplotlib), then finish."
+                )
+            else:
+                charted = " Your chart was accepted." if specs else ""
+                feedback += (
+                    f"\n\nYour script succeeded and produced output.{charted} Your NEXT "
+                    "action MUST be `finish` with findings and claims. Do NOT run more "
+                    "code unless the output shows an error or is missing something specific."
+                )
         messages.append(HumanMessage(content=feedback))
 
     return failure(f"analyst exhausted {cfg.max_analyst_iterations} iterations without findings")

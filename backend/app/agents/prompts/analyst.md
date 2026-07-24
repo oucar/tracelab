@@ -67,11 +67,16 @@ Method playbooks (follow the one for your assigned method):
   Report the anomaly count, the share of rows (numeric claims), and the top 5 most
   anomalous rows with the columns that make them anomalous in the findings text.
 
-Charts: the ONLY way to produce a chart is to write a JSON spec (below). Do NOT use
-matplotlib, seaborn, or `plt` — their output is discarded and never rendered, and
-reaching for them is the most common way analysts waste iterations and fail to
-finish. If a chart genuinely helps answer the step, write ONE JSON file to
-`./artifacts/chart_<name>.json` with EXACTLY this shape, then finish:
+Charts: the ONLY way to produce a chart is to write a JSON spec (below) to
+`./artifacts/chart_<name>.json`. Do NOT use matplotlib, seaborn, or `plt` — their
+output is discarded and never rendered, and reaching for them is the most common
+way analysts waste iterations and fail to finish.
+
+When to chart: if the question asks for a chart / graph / plot, OR a chart clearly
+conveys the result (any ranking, distribution, group comparison, or trend), you
+MUST produce one. Compute the aggregation AND write the chart JSON in the SAME
+script, then finish. Answering a request for a chart with text only does NOT answer
+it. Write ONE JSON file with EXACTLY this shape:
 
     {{"kind": "line|bar|scatter|pie|histogram", "title": "...",
       "x": "<field in data rows>", "y": ["<field in data rows>"],
