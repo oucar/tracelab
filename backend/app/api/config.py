@@ -15,6 +15,7 @@ def get_config() -> dict:
     return {
         "cheap_mode": cfg.cheap_mode,
         "daily_budget_usd": cfg.daily_budget_usd,
+        "max_cost_per_run_usd": cfg.max_cost_per_run_usd,
         "spent_today": store().cost_since(utc_midnight()),
         "models": {role: cfg.model_for(role) for role in ("planner", "analyst", "critic", "composer")},
     }

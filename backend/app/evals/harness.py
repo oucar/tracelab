@@ -21,6 +21,7 @@ from app.evals.study import ROLES
 from app.runtime.events import bus
 from app.runtime.graph import execute_run
 from app.runtime.state import RunState
+from app.tracing import pricing
 from app.tracing.store import Store, utc_midnight
 
 
@@ -47,8 +48,50 @@ def git_sha() -> str:
         return "unknown"
 
 
+#: Bumped whenever the shape of the snapshot changes. Without it, hashes from
+#: two different snapshot schemas are indistinguishable strings, so an old run
+#: silently looks reproducible under new code when it isn't.
+CONFIG_SCHEMA_VERSION = 2
+
+PROMPTS_DIR = Path(__file__).resolve().parents[1] / "agents" / "prompts"
+
+
+def prompt_digests(prompts_dir: Path | None = None) -> dict[str, str]:
+    """Content hash per agent prompt file.
+
+    The prompts are the single biggest lever on answer quality in this system,
+    and until they were part of the recorded config a pass-rate move could not
+    be attributed: swapping a model and rewording `analyst.md` produced the same
+    `config_hash`, so regression tracking could tell you *that* quality changed
+    but never *what changed*. Hashing per file rather than over the whole
+    directory means a diff of two snapshots names the prompt that moved.
+
+    `prompts_dir` resolves at call time rather than as a default argument so
+    that pointing `PROMPTS_DIR` elsewhere actually takes effect.
+    """
+    return {
+        path.stem: sha256(path.read_bytes()).hexdigest()[:12]
+        for path in sorted((prompts_dir or PROMPTS_DIR).glob("*.md"))
+    }
+
+
+def effective_judge_model(judge_model: str | None) -> str:
+    """The model the judge will ACTUALLY use, not the one configured for it.
+
+    `Settings.model_for("judge")` collapses to `analyst_model` under
+    `cheap_mode`, so recording `cfg.judge_model` verbatim can claim a gpt-4o
+    judge on a run that was in fact judged by gpt-4o-mini — the config under
+    test grading its own homework, which is exactly what pinning the judge
+    exists to prevent. An explicit `judge_model` (the study path) is honoured
+    as-is; otherwise record what resolution actually returns.
+    """
+    return judge_model or settings().model_for("judge")
+
+
 def config_snapshot(
-    models: dict[str, str] | None, judge_model: str | None = None
+    models: dict[str, str] | None,
+    judge_model: str | None = None,
+    judge_ran: bool = True,
 ) -> tuple[str, str]:
     """Snapshot the config that actually drove a run, for `config_hash` regression tracking.
 
@@ -58,11 +101,18 @@ def config_snapshot(
     is recorded alongside since it varies independently of the five agent roles
     (`ROLES` = router/planner/analyst/critic/composer) and must also be part of
     the hash so two configs differing only in judge model don't collide.
+
+    `judge_ran=False` records `judge_model: null`. A tier-1-only sweep has no
+    judge at all, and naming one implies a tier-2 number that was never
+    produced — the same class of mistake as recording a judge model the run
+    did not actually use.
     """
     cfg = settings()
     snap = {
+        "version": CONFIG_SCHEMA_VERSION,
         "models": models if models is not None else {r: cfg.model_for(r) for r in ROLES},
-        "judge_model": judge_model or cfg.judge_model,
+        "judge_model": effective_judge_model(judge_model) if judge_ran else None,
+        "prompts": prompt_digests(),
         "alpha": cfg.alpha,
         "numeric_rel_tolerance": cfg.numeric_rel_tolerance,
         "cheap_mode": cfg.cheap_mode,
@@ -91,7 +141,7 @@ def run_eval(
     """
     _ensure_sink(st)
     eval_run_id = uuid.uuid4().hex[:12]
-    config_json, config_hash = config_snapshot(models, judge_model)
+    config_json, config_hash = config_snapshot(models, judge_model, judge_ran=judge is not None)
     t_eval = time.time()
     scorable = passed = 0
     judge_totals: list[float] = []
@@ -117,8 +167,13 @@ def run_eval(
             t0 = time.time()
             final = None
             crash_detail = ""
+            headroom = (
+                max(settings().daily_budget_usd - st.cost_since(utc_midnight()), 0.0)
+                if enforce_budget
+                else None
+            )
             try:
-                out = execute_run(state, deps_factory())
+                out = execute_run(state, deps_factory(), daily_headroom_usd=headroom)
                 final = out.final
                 result = final.model_dump_json() if final else ""
                 st.finish_run(run_id, out.final_answer, "finished", result)
@@ -127,7 +182,6 @@ def run_eval(
                 crash_detail = f"run crashed: {exc} — "
             duration_ms = int((time.time() - t0) * 1000)
             cost = sum(s["cost_usd"] for s in st.spans_for_run(run_id))
-            total_cost += cost
 
             tier1 = score_tier1(q.expected, final)
             if crash_detail:
@@ -137,10 +191,20 @@ def run_eval(
 
             judge_json = rationale = None
             if judge is not None and final is not None:
-                turn, _usage = judge_answer(q.question, final, judge)
+                turn, judge_usage = judge_answer(q.question, final, judge)
+                # The judge is an LLM call like any other, but it runs outside
+                # the graph so it emits no span — which meant its cost was
+                # invisible to `spans_for_run` above and every $/question figure
+                # excluded it. With the judge pinned to a strong model it is
+                # frequently the largest single line item in a study run.
+                cost += pricing.cost_usd(
+                    judge_usage.model, judge_usage.tokens_in, judge_usage.tokens_out
+                )
                 judge_json = turn.model_dump_json()
                 rationale = turn.rationale
                 judge_totals.append(sum(getattr(turn, d) for d in DIMENSIONS) / len(DIMENSIONS))
+
+            total_cost += cost  # after the judge, so the eval total includes it
 
             st.add_eval_result(
                 eval_run_id=eval_run_id, question_id=q.id, run_id=run_id,

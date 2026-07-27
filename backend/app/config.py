@@ -46,7 +46,15 @@ class Settings(BaseSettings):
     max_tokens_per_agent: int = 24_000
 
     # M3 — observability.
+    # Enforced twice: as an admission check in POST /api/runs, and again inside
+    # the graph, where each agent re-checks the run's accumulated spend against
+    # the headroom that was left when it started. The admission check alone is
+    # not a cap — a run admitted at $1.99 of $2.00 can still fan out and spend.
     daily_budget_usd: float = 2.0  # hard cap on real-run spend per UTC day
+    # Ceiling for a single run, independent of the daily cap. Per-agent budgets
+    # are denominated in tokens, which says nothing about dollars once roles
+    # run on different models.
+    max_cost_per_run_usd: float = 0.50
 
     db_path: Path = DATA_DIR / "tracelab.sqlite3"
     checkpoints_db_path: Path = DATA_DIR / "checkpoints.sqlite3"

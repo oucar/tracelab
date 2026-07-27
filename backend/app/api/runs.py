@@ -26,7 +26,13 @@ class AskRequest(BaseModel):
     question: str
 
 
-def _execute(run_id: str, dataset: dict, question: str, deps: GraphDeps | None = None) -> None:
+def _execute(
+    run_id: str,
+    dataset: dict,
+    question: str,
+    deps: GraphDeps | None = None,
+    daily_headroom_usd: float | None = None,
+) -> None:
     """Runs in a worker thread; recording on for real runs, off for replays."""
     if deps is None:
         deps = recording_deps(GraphDeps.default(), Recorder(store(), run_id))
@@ -37,7 +43,7 @@ def _execute(run_id: str, dataset: dict, question: str, deps: GraphDeps | None =
         dataset_profile=dataset["profile"],
     )
     try:
-        final = execute_run(state, deps)
+        final = execute_run(state, deps, daily_headroom_usd=daily_headroom_usd)
         result = final.final.model_dump_json() if final.final else ""
         store().finish_run(run_id, final.final_answer, "finished", result)
     except Exception as exc:
@@ -59,8 +65,12 @@ async def create_run(req: AskRequest) -> dict:
             f"daily budget of ${cfg.daily_budget_usd:.2f} exhausted (${spent:.2f} spent today)",
         )
     run_id = store().create_run(req.dataset_id, req.question.strip())
+    # Admission is not enforcement: hand the run the headroom it was admitted
+    # with so the graph can stop itself mid-flight instead of discovering the
+    # overspend after the fact.
     asyncio.get_running_loop().run_in_executor(
-        None, _execute, run_id, dataset, req.question.strip()
+        None, _execute, run_id, dataset, req.question.strip(), None,
+        max(cfg.daily_budget_usd - spent, 0.0),
     )
     return {"run_id": run_id}
 

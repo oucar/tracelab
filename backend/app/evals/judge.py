@@ -9,6 +9,7 @@ from langchain_core.messages import HumanMessage
 
 from app.agents.llm import LLMUsage, _structured_fn
 from app.agents.schemas import JudgeTurn
+from app.config import settings
 from app.runtime.state import FinalAnswer
 
 JudgeFn = Callable[[list], tuple[JudgeTurn, LLMUsage]]
@@ -17,8 +18,16 @@ DIMENSIONS = ("clarity", "uncertainty_honesty", "chart_appropriateness",
 _PROMPT = (Path(__file__).resolve().parents[1] / "agents" / "prompts" / "judge.md")
 
 
-def real_judge() -> JudgeFn:
-    return _structured_fn("judge", JudgeTurn)
+def real_judge(model: str | None = None) -> JudgeFn:
+    """The tier-2 judge, pinned to `judge_model` unless a caller overrides it.
+
+    Passing no model at all would resolve through `Settings.model_for("judge")`,
+    which collapses to `analyst_model` under `cheap_mode` — so a default-config
+    judged run was gpt-4o-mini scoring gpt-4o-mini's own answers. Pinning here
+    keeps the judge independent of the config under test, which is the entire
+    reason the judge is a separately configured model.
+    """
+    return _structured_fn("judge", JudgeTurn, model or settings().judge_model)
 
 
 def _answer_digest(final: FinalAnswer) -> str:

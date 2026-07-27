@@ -9,6 +9,7 @@ from app.evals.golden import GOLDEN_DIR, load_golden
 
 def _cmd_run(args) -> int:
     from app.agents.llm import GraphDeps
+    from app.config import settings
     from app.deps import store
     from app.evals.harness import run_eval
     from app.evals.judge import real_judge
@@ -18,9 +19,14 @@ def _cmd_run(args) -> int:
         keep = set(args.datasets.split(","))
         golden = [g for g in golden if g.name in keep]
     st = store()
+    # Pin explicitly and record what was pinned: `real_judge()` with no model
+    # would fall through cheap_mode to the analyst model, i.e. the config under
+    # test judging itself, while the snapshot still claimed judge_model.
+    judge_model = settings().judge_model if args.judge else None
     eval_id = run_eval(
-        st, golden, GraphDeps.default, judge=real_judge() if args.judge else None,
-        label=args.label,
+        st, golden, GraphDeps.default,
+        judge=real_judge(judge_model) if args.judge else None,
+        label=args.label, judge_model=judge_model,
     )
     run = next(r for r in st.list_eval_runs() if r["id"] == eval_id)
     rate = run["tier1_passed"] / max(run["tier1_scorable"], 1)

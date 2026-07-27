@@ -23,7 +23,13 @@ from langgraph.types import Send
 
 from app.agents.llm import GraphDeps, LLMUsage, MalformedOutputError
 from app.config import settings
-from app.runtime.budget import AgentBudget, BudgetExceeded
+from app.runtime.budget import (
+    AgentBudget,
+    BudgetExceeded,
+    close_run_budget,
+    get_run_budget,
+    open_run_budget,
+)
 from app.runtime.chartspec import ChartSpec, extract_chart_specs
 from app.runtime.events import AgentEvent, EventType, bus
 from app.tracing import pricing
@@ -71,6 +77,13 @@ def _emit(
         started_at=started,
         duration_ms=int((time.time() - started) * 1000),
     )
+    # Single choke point for spend: cost is already computed here, so charging
+    # here means no model call can bypass the run budget — including the
+    # composer's, which has no per-agent token budget of its own.
+    if usage is not None:
+        run_budget = get_run_budget(run_id)
+        if run_budget is not None:
+            run_budget.charge(usage.model, event.cost_usd)
     bus.emit(event)
     return event.span_id
 
@@ -91,8 +104,9 @@ def router_node(state: RunState, deps: GraphDeps) -> dict:
     if deps.router is None:
         route, reason, usage = "multi_step", "no router configured", None
     else:
-        budget = AgentBudget.for_role("router")
+        budget = AgentBudget.for_role("router", state.run_id)
         try:
+            budget.check_run_cost()
             turn, usage = deps.router(
                 [
                     HumanMessage(
@@ -156,9 +170,10 @@ def route_from_router(state: RunState):
 
 def planner_node(state: RunState, deps: GraphDeps) -> dict:
     cfg = settings()
-    budget = AgentBudget.for_role("planner")
+    budget = AgentBudget.for_role("planner", state.run_id)
     t0 = time.time()
     try:
+        budget.check_run_cost()
         turn, usage = deps.planner(
             [
                 SystemMessage(
@@ -239,7 +254,7 @@ def analyst_node(task: AnalystTask | dict, deps: GraphDeps) -> dict:
     task = AnalystTask.model_validate(task)  # Send delivers a plain dict payload
     branch_root: str | None = None
     cfg = settings()
-    budget = AgentBudget.for_role("analyst")
+    budget = AgentBudget.for_role("analyst", task.run_id)
     step = task.step
     columns = [c.get("name", "") for c in task.dataset_profile.get("columns", [])]
     wants_chart = any(k in task.question.lower() for k in ("chart", "graph", "plot", "visuali"))
@@ -293,6 +308,7 @@ def analyst_node(task: AnalystTask | dict, deps: GraphDeps) -> dict:
     for iteration in range(1, cfg.max_analyst_iterations + 1):
         t0 = time.time()
         try:
+            budget.check_run_cost()
             turn, usage = deps.analyst_turn(messages)
             budget.spend_llm(usage.tokens_in, usage.tokens_out)
         except (BudgetExceeded, MalformedOutputError) as exc:
@@ -404,7 +420,7 @@ def critic_node(state: RunState, deps: GraphDeps) -> dict:
     if not claims:
         return {"verdicts": [], "retry_steps": []}
 
-    budget = AgentBudget.for_role("critic")
+    budget = AgentBudget.for_role("critic", state.run_id)
     claims_json = json.dumps([c.model_dump() for c in claims], indent=2, default=str)
     messages: list = [
         SystemMessage(
@@ -420,6 +436,7 @@ def critic_node(state: RunState, deps: GraphDeps) -> dict:
     for iteration in range(1, cfg.max_critic_iterations + 2):
         t0 = time.time()
         try:
+            budget.check_run_cost()
             turn, usage = deps.critic_turn(messages)
             budget.spend_llm(usage.tokens_in, usage.tokens_out)
         except (BudgetExceeded, MalformedOutputError) as exc:
@@ -618,6 +635,33 @@ def composer_node(state: RunState, deps: GraphDeps) -> dict:
             )
         context = "\n\n".join(parts)
 
+    # The composer is the node that has to TELL the user a run ran out of money,
+    # so it must never be the node that dies of it. On exhaustion it skips the
+    # LLM call and assembles a deterministic, free narrative from what the run
+    # already produced — partial findings and their verification status survive
+    # rather than being replaced by a stack trace.
+    budget = AgentBudget.for_role("composer", state.run_id)
+    try:
+        budget.check_run_cost()
+    except BudgetExceeded as exc:
+        _emit(
+            state.run_id,
+            "composer",
+            EventType.ERROR,
+            {"error": str(exc), "composed": "deterministic — budget exhausted"},
+            t0,
+            parent=state.root_span_id,
+        )
+        answer = (
+            f"This run stopped early: {exc}.\n\n"
+            "What was completed before the budget ran out is below, unsummarised "
+            "and with its verification status intact.\n\n" + context
+        )
+        final = FinalAnswer(
+            narrative=answer, claims=verified_claims, charts=charts, failed=True
+        )
+        return {"final_answer": answer, "final": final}
+
     answer, usage = deps.compose(
         [
             SystemMessage(content=_prompt("composer")),
@@ -656,9 +700,23 @@ def build_graph(deps: GraphDeps, checkpointer=None):
     return g.compile(checkpointer=checkpointer)
 
 
-def execute_run(state: RunState, deps: GraphDeps | None = None) -> RunState:
-    """Run the graph for one question, emitting lifecycle events."""
+def execute_run(
+    state: RunState,
+    deps: GraphDeps | None = None,
+    daily_headroom_usd: float | None = None,
+) -> RunState:
+    """Run the graph for one question, emitting lifecycle events.
+
+    `daily_headroom_usd` is the spend still available under today's cap when
+    this run was admitted. Callers that own a store (the API, the eval harness)
+    pass it; callers that do not — unit tests — leave it None, which disables
+    only the daily layer. The per-run dollar cap always applies.
+
+    The graph itself never reads the store: keeping that dependency at the call
+    site is what lets the whole graph run in tests without a database.
+    """
     deps = deps or GraphDeps.default()
+    open_run_budget(state.run_id, daily_headroom_usd)
     t0 = time.time()
     root = AgentEvent(
         run_id=state.run_id,
@@ -705,3 +763,7 @@ def execute_run(state: RunState, deps: GraphDeps | None = None) -> RunState:
             )
         )
         raise
+    finally:
+        # Registry entries are per-run and must not outlive the run, on either
+        # path — a leak here would be an unbounded dict keyed by run id.
+        close_run_budget(state.run_id)
