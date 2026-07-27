@@ -21,9 +21,9 @@ is right and this doc is stale.
 ┌────────────────────────────────────────────┴───────────────────────────────────────────────────┐
 │                               backend (FastAPI, Python 3.12)                                     │
 │                                                                                                    │
-│  api/        upload.py · runs.py (create, list, replay) · ask.py (SSE) · evals.py                │
+│  api/        datasets.py (upload) · runs.py (create, SSE, list, replay) · evals.py · config.py   │
 │  runtime/    graph.py (nodes + edges) · state.py (RunState) · events.py (AgentEvent, EventBus)    │
-│              reconcile.py (tolerance policy) · budget.py (per-agent hard caps)                     │
+│              reconcile.py (tolerance policy) · budget.py (per-agent caps + per-run $ ceiling)     │
 │              recording.py (record/replay of the nondeterministic boundary) · chartspec.py         │
 │  agents/     llm.py (GraphDeps, model wiring) · schemas.py (structured-output types) · prompts/   │
 │  sandbox/    executor.py (subprocess isolation + rlimits)                                          │
@@ -173,7 +173,7 @@ class EventType(str, Enum):
     TOOL_CALL = "tool_call"     # sandbox executions surface as tool calls
     HANDOFF = "handoff"
     VERDICT = "verdict"
-    ANSWER_CHUNK = "answer_chunk"
+    ANSWER_CHUNK = "answer_chunk"   # reserved; nothing emits it yet
     RUN_FINISHED = "run_finished"
     ERROR = "error"
 
@@ -337,26 +337,67 @@ built.
 
 ## 7. Budgets
 
-`backend/app/runtime/budget.py`. Every node instantiates its own
-`AgentBudget.for_role(role)` — parallel analyst branches each get an
+`backend/app/runtime/budget.py`. Two layers, because they fail differently.
+
+**Per-agent (`AgentBudget`).** Every node instantiates its own
+`AgentBudget.for_role(role, run_id)` — parallel analyst branches each get an
 independent counter, "per agent" meaning per *instance*, not per role
 globally. Caps are call-count and token-count based (`max_llm_calls`,
-`max_tool_calls`, `max_tokens`), not dollar-based directly — dollars are a
-derived rollup from the cost meter. `BudgetExceeded` is caught at each call
-site and converted into a typed failure path (an `error` event, an
-`AnalystResult(failed=True, ...)` or `planner_failed=True`) that the composer
-is required to surface honestly, rather than an unhandled exception taking
-the whole run down. Separately, `run_eval`'s daily budget check
-(`cost_since(utc_midnight()) >= daily_budget_usd`) is a *sweep-level* guard
-against runaway spend across an entire eval run, independent of per-agent
-budgets.
+`max_tool_calls`, `max_tokens`). This bounds one agent looping forever.
+
+**Per-run (`RunBudget`).** Token caps say nothing about dollars once roles
+run on different models, so a second layer holds a dollar ceiling:
+`max_cost_per_run_usd`, plus the headroom still available under
+`daily_budget_usd` when the run was admitted. It lives in a module-level
+registry keyed by `run_id`, the same shape as the event bus, because analyst
+branches run in separate threads and cannot share mutable graph state —
+LangGraph's channels exist precisely to stop that.
+
+Charging happens at one choke point, `graph._emit`, where cost is already
+computed; that is what makes it impossible for a call to bypass the budget,
+including the composer's, which has no per-agent budget of its own.
+Enforcement happens immediately before each model call, inside the `try`
+blocks that already handle `BudgetExceeded`. The consequence is a bounded
+overshoot: a run can exceed its ceiling by at most the single call already
+in flight, which is an honest overshoot rather than an unbounded one.
+
+**Why the daily cap is checked twice.** `POST /api/runs` refuses admission
+once today's spend crosses `daily_budget_usd`, and then hands the run the
+headroom it was admitted with. Admission alone is not a cap: a run let in at
+$1.99 of $2.00 could previously fan out four analysts, a critic, a bounded
+retry and a composer, and discover the overspend only afterwards. The
+in-graph check is what makes the config comment ("hard cap on real-run spend
+per UTC day") true rather than aspirational. `run_eval` does the same at
+sweep level, per question.
+
+`BudgetExceeded` is caught at each call site and converted into a typed
+failure path (an `error` event, an `AnalystResult(failed=True, ...)` or
+`planner_failed=True`) that the composer surfaces honestly, rather than an
+unhandled exception taking the whole run down. The composer is the special
+case: it is the node that has to *tell* you a run ran out of money, so on
+exhaustion it skips its own LLM call and assembles the narrative
+deterministically from what the run already produced. Partial findings keep
+their verification status instead of being replaced by a stack trace.
+
+**Unpriced models are a stop, not a $0.00.** `tracing/pricing.py`
+distinguishes genuinely-free models (test stubs, replays) from a real model
+with no entry in `PRICES`. The latter used to record `cost_usd=0`, which
+silently made every dollar budget unenforceable for that model and made the
+cost meter label a real paid run as free. `is_unpriced()` now flags it and
+`RunBudget.check` refuses to continue on a run whose spend it cannot
+measure.
 
 ## 8. Frontend state: two different problems, two different tools
 
-- **Zustand** owns the live run store: `useRunStream(runId)` folds incoming
-  SSE `AgentEvent`s into it, and the agent graph, event log, and cost ticker
-  all derive from that one store. This is inherently a streaming,
+- **Zustand** owns the live run store for the Workbench: `useRunStream(runId)`
+  folds incoming SSE `AgentEvent`s into it. This is inherently a streaming,
   append-only, single-source-of-truth problem.
+
+  One honest caveat, because the split is cleaner in this doc than in the
+  code: the run view's agent graph, span inspector, and cost meter derive
+  from `useRunEvents`' local React state, not from the Zustand store. Two
+  fold implementations of the same event stream is one more than the design
+  calls for, and the store is the one that should win.
 - **TanStack Query** owns everything that's a normal HTTP fetch with
   caching semantics: the runs list, eval history, dataset profiles. Using a
   live-stream store for that would mean hand-rolling cache invalidation;

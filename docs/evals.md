@@ -11,12 +11,12 @@ Three bundled CSVs, 11 questions each, 33 total
 (`backend/app/evals/golden/{taxi,retail,weather}.yaml`):
 
 ```yaml
-- id: taxi-007
-  question: "Which pickup hour has the highest average fare?"
+- id: taxi-003
+  question: "Which pickup hour (0-23) has the highest average fare?"
   expected:
     kind: numeric
-    value: 5
-    tolerance: 0
+    value: 1
+    tolerance: 0.0
   tags: [aggregation, groupby]
 ```
 
@@ -143,17 +143,40 @@ Two live runs exist as of this doc, both `gpt-4o-mini` everywhere
 
 | eval_run_id | label | questions | tier-1 scorable | tier-1 passed | judge_avg | cost |
 |---|---|---|---|---|---|---|
-| `3b5fec45879f` | m4 baseline | 33 | 30 | 20 (**67%**) | — (no judge) | **$0.11** |
-| `af062bcbea34` | m4 judged | 33 | 30 | 20 (67%) | **4.35 / 5** | $0.12 |
+| `3b5fec45879f` | m4 baseline | 33 | 30 | 20 (**67%**) | — (no judge) | **$0.11**† |
+| `af062bcbea34` | m4 judged | 33 | 30 | 20 (67%) | ~~4.35 / 5~~ (retracted) | $0.12† |
 
 Both are `python -m app.evals run` invocations, not `study` runs (no
-`study:*` label exists yet — see §5). These are the numbers quoted in the
-README as "the first live baseline"; they are the actual harness output,
-via `st.list_eval_runs()`, not hand-typed.
+`study:*` label exists yet — see §5). The tier-1 figures are real harness
+output via `st.list_eval_runs()`, not hand-typed, and the 67% pass rate
+stands.
+
+**† Costs are understated, and the tier-2 score is withdrawn.** Two defects
+in the harness of that era, both since fixed:
+
+1. **Judge spend was never counted.** Per-question cost summed graph spans
+   only (`st.spans_for_run`), and `judge_answer` runs outside the graph so it
+   emits no span — `harness.py` discarded the returned `LLMUsage` entirely.
+   Both dollar figures above therefore exclude the whole tier-2 line item, as
+   does every `$/question` estimate in §5. The harness now prices the judge's
+   usage and adds it to the per-question and eval-run totals.
+2. **The judge was not pinned on the `run` path.** `real_judge()` was called
+   with no model, so it resolved through `Settings.model_for("judge")`, which
+   under `cheap_mode` collapses to `analyst_model`. Run `af062bcbea34` was
+   therefore `gpt-4o-mini` scoring `gpt-4o-mini`'s own answers, while
+   `config_snapshot` recorded `judge_model: "gpt-4o"` — the exact
+   self-evaluation §5 calls the study's validity linchpin. `real_judge(model)`
+   now pins explicitly and the snapshot records the *effective* judge model.
+
+The `4.35 / 5` is struck rather than deleted, because a project that argues
+for honest failure should show its own. There is no tier-2 number until a
+judged sweep runs on the fixed harness.
 
 A third early run (`550a6fdd8a71`, "m4 baseline") passed only 6/30 — kept in
-the store as-is (the regression timeline is meant to show the real
-trajectory including a bad run, not a curated best-of).
+the store as-is, for the same reason.
+
+The regression timeline is meant to show the real trajectory including a bad
+run, not a curated best-of.
 
 ## 5. The tradeoff study
 
@@ -174,19 +197,32 @@ model changed alongside the agents, the quality axis would be measuring
 "how much does gpt-4o like gpt-4o's own answers" instead of comparing
 configs on a fixed yardstick.
 
+`_cmd_study` has always honoured that, passing `model=cfg.judge_model` down
+to `_structured_fn`. `_cmd_run --judge` did not, until recently: see §4's
+retraction. Pinning now lives in `real_judge()` itself, so the linchpin holds
+on both paths rather than only on the one the study happens to use.
+
 `GraphDeps.default(models=cfg.models)` threads each config's per-role model
 map through `_structured_fn(role, schema, model=models.get(role))`,
 bypassing `cheap_mode`'s collapse entirely — explicit models always win.
 `config_snapshot()` (`backend/app/evals/harness.py`) records the *exact*
-dict that was passed, not a re-read of `settings()`, and hashes all five
-agent roles plus the judge model together, so two configs that differ only
-in, say, `router` or `judge_model` get distinct `config_hash`es instead of
-colliding.
+dict that was passed, not a re-read of `settings()`, and hashes together all
+five agent roles, the effective judge model, and a content digest of every
+file in `app/agents/prompts/`. Prompts belong in that hash for the same
+reason models do, and arguably more: they are the biggest lever on answer
+quality here, and while they sat outside it, rewording `analyst.md` and
+swapping the analyst model produced the same `config_hash` — regression
+tracking could see *that* quality moved but never *what moved it*. Digesting
+per file rather than over the directory means diffing two snapshots names the
+prompt that changed. The snapshot also carries a schema `version`, so hashes
+produced under an older shape are not mistaken for reproducible ones, and a
+sweep run without a judge records `judge_model: null` instead of naming a
+judge that never ran.
 
 ```bash
 cd backend
-.venv/bin/python -m app.evals study --configs mini              # ~$1 with judge, ungated
-.venv/bin/python -m app.evals study --configs strong-planner,strong-critic,strong  # ~$10-20, OWNER GATE
+.venv/bin/python -m app.evals study --configs mini              # est. ≥$1 with judge, ungated
+.venv/bin/python -m app.evals study --configs strong-planner,strong-critic,strong  # est. ≥$10-20, OWNER GATE
 .venv/bin/python -m app.evals report --png ../docs/assets/tradeoff.png
 ```
 
@@ -200,10 +236,15 @@ labeled.
 
 > **Tradeoff study — placeholder.** No `study:*` eval run exists yet as of
 > this doc (`study_rows()` returns an empty list against the current
-> store). The mini config is cheap enough to run without asking (~$1 with
-> the judge); the three strong configs are gated on the owner's explicit
-> go-ahead (est. $10–20 combined for 33 questions × 3 configs, gpt-4o roles
-> + gpt-4o judge) per the M5 build plan. Regenerate once approved and run:
+> store). The mini config is cheap enough to run without asking; the three
+> strong configs are gated on the owner's explicit go-ahead per the M5 build
+> plan. Both dollar estimates here (≥$1 and ≥$10–20 combined for 33
+> questions × 3 configs) predate judge-cost accounting and are floors, not
+> forecasts — with the judge pinned to `gpt-4o` in every config it is often
+> the largest line item in a study run. Note also that
+> `daily_budget_usd` defaults to `2.0` while `enforce_budget` is on by
+> default, so the strong sweep as documented aborts partway unless the cap is
+> raised first. Regenerate once approved and run:
 > ```bash
 > cd backend && .venv/bin/python -m app.evals study
 > .venv/bin/python -m app.evals report --png ../docs/assets/tradeoff.png
@@ -247,7 +288,55 @@ tier-1 pass rate against `backend/app/evals/baseline.json` (currently
 margin and fails the build if the run dropped below the floor. As written,
 the job self-skips (prints a message, exits 0) whenever the `OPENAI_API_KEY`
 repo secret isn't configured — which is its current state. That's a
-deliberate no-op, not a broken pipeline: the gate exists and is correct, it
-just needs the owner to add the secret to actually run. The judge (tier 2)
-tier intentionally never runs in CI — it stays a manual/local step to
-control spend, per the M4 build plan.
+deliberate no-op, not a broken pipeline: the gate exists, it just needs the
+owner to add the secret to actually run. The judge (tier 2) tier
+intentionally never runs in CI — it stays a manual/local step to control
+spend, per the M4 build plan.
+
+## 7. Known measurement gaps
+
+The point of this layer is to produce numbers you can act on, so the ways it
+currently produces numbers you cannot are worth writing down. All open:
+
+- **`judge_avg` averages only over runs that did not crash.** `harness.py`
+  appends a score only when `final is not None`, and no `judge_n` column
+  records how many answers were judged. A config that crashes more questions
+  therefore scores *higher*, and it is undetectable after the fact. §5's
+  quality axis is a cross-config comparison of exactly this number, so this
+  is the most damaging item on the list.
+- **Tier 1 passes on any claim matching, and ignores verification status.**
+  `score_tier1` loops over every claim and returns on the first value match;
+  `VerifiedClaim.status` is never read. So an incidental claim can pass a
+  question whose headline claim is wrong, and a claim the critic marked
+  `unverified` still counts as a pass — which quietly undoes the
+  verification story for scoring purposes.
+- **`cfg.alpha` and `cfg.numeric_rel_tolerance` are in `config_hash` but do
+  not drive tier-1 scoring.** Scoring uses the per-question YAML `tolerance`,
+  and golden `significant` flags come from `derivations.ALPHA`, a separate
+  hardcoded constant. Setting `ALPHA=0.01` in the environment makes the
+  agents test at 0.01 against expectations derived at 0.05, and the mismatch
+  reads as a model regression.
+- **Golden-set and sample-dataset versions are absent from provenance.**
+  Regenerating a sample CSV or editing one per-question tolerance moves the
+  pass rate with no attributable signal in the `eval_runs` row.
+- **Cohen's κ returns a fabricated `0.0` when either rater used fewer than
+  two distinct values**, rendered by `report.py` as a plain number
+  indistinguishable from chance-level agreement. `chart_appropriateness` is
+  guaranteed to hit this: `judge.md` hardcodes "if no chart was needed and
+  none shown, score 4", so that dimension has zero variance. The same
+  constant means a quarter of any rubric average is a fixed floor rather
+  than a measurement.
+- **Partially-labelled calibration entries are dropped silently.**
+  `calibration.py` skips an entry if any one of the four dimensions is null
+  and reports no skipped count, so a half-filled `human_labels.yaml`
+  produces a confident agreement table over a self-selected subset.
+- **The CI gate compares a bare float.** `baseline.json` carries no
+  `config_hash`, git SHA, or question count, so `--datasets taxi` (11
+  questions) is gated against a 33-question baseline; `--gate` and
+  `--write-baseline` can be passed together, silently ratcheting the floor
+  down after a regression; and at 30 scorable questions the 5-point margin is
+  ~1.5 questions of tolerance with no repeats or seeding, so the gate is
+  noise-dominated even when it does run.
+- **A budget abort orphans the eval run.** `run_eval` raises mid-sweep before
+  `add_eval_run`, so the `eval_results` rows already written have no parent
+  row — invisible to `/api/evals` and the UI, with the spend unattributed.

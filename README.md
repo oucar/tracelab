@@ -62,7 +62,20 @@ demo, not a bug to hide.
 **Measure everything, including the judge.** Per-agent token cost and
 latency, a golden-dataset eval harness with two scoring tiers, an LLM judge
 hand-checked against human labels (not just trusted because it returns a
-number), and a quality-vs-cost-vs-latency study across model configs.
+number), and a quality-vs-cost-vs-latency study across model configs. The
+recorded config for a run includes a content hash of every agent prompt, so
+a pass-rate move is attributable to *what* changed rather than merely
+noticed.
+
+**Budgets are enforced, not advisory.** Two layers, because they fail
+differently: per-agent call/tool/token caps bound one agent looping forever,
+and a per-run dollar ceiling plus the run's remaining daily headroom bound
+what a whole run can spend. The dollar layer is checked inside the graph
+before every model call, not only at admission — a run admitted with $0.01
+of headroom left cannot then fan out four analysts and spend freely.
+Exhaustion is a typed failure the composer reports, and it composes that
+report deterministically, so the node whose job is to tell you about the
+stop is never the node that dies of it.
 
 Anti-goals, because restraint is a signal too:
 
@@ -317,14 +330,33 @@ maintained by hand.
   four dimensions (`clarity`, `uncertainty_honesty`, `chart_appropriateness`,
   `methodological_soundness`) on every answer, judged by a model pinned
   independently of the config under test (`gpt-4o`, so the study's quality
-  axis measures the agents, not the judge).
+  axis measures the agents, not the judge). `real_judge()` pins that model
+  explicitly rather than resolving it through `model_for("judge")`, which
+  collapses to the analyst model under `CHEAP_MODE` — and the snapshot
+  records the model that will *actually* run, not the one configured.
 
 **First live baseline** (eval `3b5fec45879f`, config `gpt-4o-mini`
 everywhere): **67% tier-1 pass (20/30 scorable questions)**, ~$0.11 for the
-full 33-question sweep. A separate judged run (`af062bcbea34`) scored
-**judge_avg 4.35/5** across the four rubric dimensions, ~$0.12. Both numbers
-come straight out of `python -m app.evals report` — nothing here is
-hand-typed.
+full 33-question sweep. That number comes straight out of
+`python -m app.evals report` — nothing here is hand-typed.
+
+> **The judged run from that era is retracted, not restated.** A second run
+> (`af062bcbea34`) recorded `judge_avg 4.35/5` at ~$0.12, and the README used
+> to quote it. Two defects made it unusable, both since fixed and both worth
+> naming rather than quietly deleting:
+>
+> 1. **The judge was not pinned on the `run` path.** `real_judge()` took no
+>    model, so it fell through `CHEAP_MODE` to `gpt-4o-mini` — the config
+>    under test grading its own answers, which is precisely what pinning
+>    exists to prevent. The recorded config still claimed `gpt-4o`.
+> 2. **Judge spend was never counted.** Per-question cost summed graph spans
+>    only, and the judge runs outside the graph so it emits no span. Every
+>    `$/question` figure, including the ~$0.11/~$0.12 above, excludes the
+>    tier-2 line item entirely.
+>
+> Both are fixed in code (the judge is pinned and its usage is now charged),
+> so the next judged sweep produces a number that means what it says. Until
+> that sweep runs, there is no tier-2 figure here.
 
 **Judge calibration (say the real thing, do the real thing).** The harness
 supports hand-labeling judged answers against the same rubric and reporting
@@ -334,6 +366,15 @@ template for the 33 judged answers in `af062bcbea34` already exists
 (`backend/app/evals/labels/human_labels.yaml`) but is not yet hand-labeled —
 that pass is the owner's, deliberately: an agent hand-filling its own
 grading key would defeat the point of calibration.
+
+Two caveats before that labeling pass is worth doing. First, `af062bcbea34`
+is the retracted run above, so calibrate against a fresh judged sweep
+instead — measuring agreement with an unpinned judge measures the wrong
+thing. Second, `chart_appropriateness` will report `κ = 0.000` regardless of
+how well the human agrees, because `judge.md` hardcodes "score 4" when no
+chart was needed and a dimension with zero variance has undefined κ; the
+code currently returns `0.0` there, which is indistinguishable from
+chance-level agreement.
 
 > **Judge calibration table — placeholder.** Regenerate after labeling:
 > ```bash
@@ -354,10 +395,12 @@ critic only, strong everywhere; judge always pinned to `gpt-4o`) and
 `python -m app.evals report --png docs/assets/tradeoff.png` renders the
 markdown table and the quality-vs-cost-vs-latency scatter.
 
-> **Tradeoff study — placeholder.** The mini config is cheap to run
-> (~$1 with judge); the three strong configs cost an estimated $10–20
-> together and are gated on the owner's go-ahead (M5 build plan, Task 5).
-> Neither has run yet as of this doc. Regenerate with:
+> **Tradeoff study — placeholder.** Neither has run yet as of this doc. The
+> old estimates (~$1 for mini, $10–20 for the three strong configs) were
+> computed before judge spend was counted, and with the judge pinned to
+> `gpt-4o` in every config it is frequently the largest single line item —
+> treat them as floors, not forecasts. The strong configs stay gated on the
+> owner's go-ahead (M5 build plan, Task 5). Regenerate with:
 > ```bash
 > cd backend
 > .venv/bin/python -m app.evals study                       # all four configs
@@ -375,9 +418,16 @@ markdown table and the quality-vs-cost-vs-latency scatter.
 > not from priors.
 
 **Regression tracking.** Every eval run is tagged with git SHA + a
-`config_hash` (a hash of the exact per-role models, judge model, tolerance,
-and alpha used — so two configs that differ only in, say, the router model
-never collide). The Evals screen plots tier-1 % and judge average over time.
+`config_hash` over the exact per-role models, the *effective* judge model, a
+content digest of every agent prompt, tolerance, and alpha — so two configs
+that differ only in, say, the router model or a reworded `analyst.md` never
+collide. The prompts matter most here: they are the biggest lever on answer
+quality in the system, and while they were outside the hash a pass-rate move
+could be observed but never attributed. The snapshot carries a schema
+`version` so hashes from an older shape are not mistaken for reproducible
+ones, and a sweep with no judge records `judge_model: null` rather than
+naming a judge that never ran. The Evals screen plots tier-1 % and judge
+average over time.
 A GitHub Actions job (`.github/workflows/ci.yml`, `eval-gate`) runs the
 programmatic tier on every PR and fails the build if the pass rate drops
 more than a margin below `baseline.json` — it currently self-skips (exits 0)
@@ -409,6 +459,48 @@ moves onto a durable queue (Celery/Temporal/SQS) and the checkpointer's
 "resume from last superstep" semantics become the recovery story instead of
 "the process didn't die."
 
+**Known gaps in the measurement layer.** A tool whose pitch is "measure
+everything" owes you the list of things it currently measures wrong. These
+came out of an audit of the docs against the code and are open, not fixed:
+
+- **`judge_avg` averages only over runs that did not crash.** `harness.py`
+  appends a judge score only when `final is not None`, so a config that
+  crashes more questions scores *higher*, and nothing records how many
+  answers were actually judged. This corrupts the study's quality axis,
+  which is a cross-config comparison of exactly this number.
+- **Tier 1 passes on any claim matching, and ignores verification status.**
+  `scoring.py` returns pass on the first claim whose value matches, so an
+  incidental claim can pass a question whose headline claim is wrong, and a
+  claim this system's own critic marked `unverified` still counts as a pass.
+- **Cohen's κ reports `0.000` for the undefined case**, and
+  `chart_appropriateness` is guaranteed to hit it: `judge.md` hardcodes
+  "score 4" when no chart was needed, so that dimension has zero variance
+  and will print as chance-level agreement no matter how well the human
+  agrees.
+- **The CI eval-gate compares a bare float.** `baseline.json` stores a pass
+  rate with no `config_hash`, git SHA, or question count, so a
+  `--datasets taxi` run (11 questions) is gated against a 33-question
+  baseline, and `--gate --write-baseline` together silently ratchet the
+  floor down after a regression.
+- **Neither golden-set nor sample-dataset versions are in the provenance.**
+  Prompts and models are hashed now; regenerating a sample CSV or editing a
+  per-question tolerance still moves the pass rate with no attributable
+  signal in the recorded config.
+
+**Known gaps in the live layer.** Same principle, different subsystem:
+
+- **SSE events are pushed onto an `asyncio.Queue` from a worker thread.**
+  `put_nowait` schedules via `call_soon`, not `call_soon_threadsafe`, so the
+  loop only notices on the next keepalive — the cost meter's "real time" is
+  in practice bursty and seconds late.
+- **A process restart strands a run permanently.** Event history and the
+  finished-run set live in process memory and nothing reconciles
+  `runs.status` on startup, so the row stays `running`, a new subscriber
+  blocks on the queue forever, and the dashboard polls indefinitely.
+- **The run view draws critic and composer nodes as `done` on paths where
+  they never ran**, keyed off the presence of a `run_finished` event rather
+  than that agent's own spans.
+
 **Anti-goals**, restated as boundaries actually held:
 
 - Not a general AutoGPT — agents do exactly one job, analyzing tabular data.
@@ -418,13 +510,17 @@ moves onto a durable queue (Celery/Temporal/SQS) and the checkpointer's
   layers are custom, not because LangGraph couldn't do it, but because
   building them was the point.
 
-**What I'd build next:** container-per-execution sandboxing; a durable queue
-for analyst dispatch so a run survives a process restart; more statistical
-methods behind the same methodology-chip contract (currently mean
-comparison, correlation, regression, clustering, time-series backtest, and
-anomaly detection); a second LLM provider behind the same config-driven
+**What I'd build next:** close the measurement gaps above, in that order
+(they undermine every number the project reports, which makes them worth
+more than any new feature); container-per-execution sandboxing; a durable
+queue for analyst dispatch so a run survives a process restart; more
+statistical methods behind the same methodology-chip contract (currently
+mean comparison, correlation, regression, clustering, time-series backtest,
+and anomaly detection); a second LLM provider behind the same config-driven
 `model_for(role)` seam to prove the model-agnostic design isn't just a
-one-provider illusion.
+one-provider illusion — which also means growing `PRICES` beyond its two
+entries, since an unpriced model is now a hard stop rather than a silent
+$0.00.
 
 ---
 
