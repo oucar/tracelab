@@ -11,10 +11,10 @@ from app.runtime.state import Claim, PlanStep
 
 __all__ = [
     "AnalystTurn",
-    "PlannerTurn",
-    "CriticTurn",
     "CriticFinding",
+    "CriticTurn",
     "JudgeTurn",
+    "PlannerTurn",
     "RouterTurn",
     "SuggestionsTurn",
 ]

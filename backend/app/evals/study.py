@@ -1,8 +1,9 @@
 """Multi-config tradeoff study: which roles deserve the strong model?"""
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 import yaml
 from pydantic import BaseModel
@@ -36,10 +37,10 @@ def load_study_config(path: Path) -> StudyConfig:
 
 
 def run_study(
-    st: "Store",
+    st: Store,
     configs: list[StudyConfig],
-    deps_factory_for: Callable[[StudyConfig], Callable[[], "GraphDeps"]],
-    judge_for: Callable[[StudyConfig], "JudgeFn | None"],
+    deps_factory_for: Callable[[StudyConfig], Callable[[], GraphDeps]],
+    judge_for: Callable[[StudyConfig], JudgeFn | None],
     *,
     golden_sets: list[GoldenDataset],
     repo_root: Path = REPO_ROOT,

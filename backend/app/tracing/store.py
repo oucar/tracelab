@@ -10,7 +10,7 @@ import json
 import sqlite3
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from app.runtime.events import AgentEvent
@@ -18,8 +18,8 @@ from app.runtime.events import AgentEvent
 
 def utc_midnight() -> float:
     """Start of the current UTC day as a unix timestamp — the budget window."""
-    now = datetime.now(timezone.utc)
-    return datetime(now.year, now.month, now.day, tzinfo=timezone.utc).timestamp()
+    now = datetime.now(UTC)
+    return datetime(now.year, now.month, now.day, tzinfo=UTC).timestamp()
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (

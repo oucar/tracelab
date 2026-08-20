@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from langchain_core.messages import HumanMessage
 

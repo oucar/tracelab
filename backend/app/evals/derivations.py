@@ -4,8 +4,8 @@ Numeric floats are rounded to 4 decimals so YAML round-trips exactly.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import pandas as pd
 import yaml

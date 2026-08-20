@@ -32,7 +32,6 @@ from app.runtime.budget import (
 )
 from app.runtime.chartspec import ChartSpec, extract_chart_specs
 from app.runtime.events import AgentEvent, EventType, bus
-from app.tracing import pricing
 from app.runtime.reconcile import reconcile_claims
 from app.runtime.state import (
     AnalysisStep,
@@ -45,6 +44,7 @@ from app.runtime.state import (
     RunState,
     VerifiedClaim,
 )
+from app.tracing import pricing
 
 PROMPTS_DIR = Path(__file__).resolve().parent.parent / "agents" / "prompts"
 

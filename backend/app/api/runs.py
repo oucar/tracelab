@@ -46,7 +46,7 @@ def _execute(
         final = execute_run(state, deps, daily_headroom_usd=daily_headroom_usd)
         result = final.final.model_dump_json() if final.final else ""
         store().finish_run(run_id, final.final_answer, "finished", result)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001  # worker thread: any failure becomes the run's error result
         store().finish_run(run_id, f"error: {exc}", "error")
 
 

@@ -5,9 +5,9 @@ import json
 import subprocess
 import time
 import uuid
+from collections.abc import Callable
 from hashlib import sha256
 from pathlib import Path
-from typing import Callable
 
 import pandas as pd
 
@@ -41,7 +41,7 @@ def git_sha() -> str:
     try:
         out = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
-            cwd=REPO_ROOT, capture_output=True, text=True, timeout=5,
+            cwd=REPO_ROOT, capture_output=True, text=True, timeout=5, check=False,
         )
         return out.stdout.strip() or "unknown"
     except (OSError, subprocess.SubprocessError):
@@ -177,7 +177,7 @@ def run_eval(
                 final = out.final
                 result = final.model_dump_json() if final else ""
                 st.finish_run(run_id, out.final_answer, "finished", result)
-            except Exception as exc:  # one bad question must not kill the sweep
+            except Exception as exc:  # noqa: BLE001  # one bad question must not kill the sweep
                 st.finish_run(run_id, f"error: {exc}", "error")
                 crash_detail = f"run crashed: {exc} — "
             duration_ms = int((time.time() - t0) * 1000)

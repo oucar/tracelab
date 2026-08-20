@@ -7,8 +7,8 @@ import pytest
 
 from app.agents.llm import GraphDeps, LLMUsage
 from app.agents.schemas import AnalystTurn, CriticFinding, CriticTurn, PlannerTurn, RouterTurn
-from app.runtime.graph import execute_run
 from app.runtime.events import bus
+from app.runtime.graph import execute_run
 from app.runtime.state import Claim, PlanStep, RunState
 
 U = LLMUsage(tokens_in=10, tokens_out=5)
@@ -404,7 +404,7 @@ def test_statistical_route_uses_planner(dataset):
     execute_run(make_state(dataset, "run-stat"), deps)
     events = bus.history("run-stat")
     assert [e for e in events if e.agent == "planner"]
-    assert [e for e in events if e.agent == "router"][0].payload["route"] == "statistical"
+    assert next(e for e in events if e.agent == "router").payload["route"] == "statistical"
 
 
 def test_no_router_behaves_like_multi_step(dataset):

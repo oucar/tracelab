@@ -81,7 +81,7 @@ def test_harness_scores_pass_and_fail(tmp_path):
         st, _golden(tmp_path, 3), lambda: _deps(99), label="wrong", repo_root=tmp_path,
         enforce_budget=False,
     )
-    wrong = [r for r in st.list_eval_runs() if r["id"] == eval_id2][0]
+    wrong = next(r for r in st.list_eval_runs() if r["id"] == eval_id2)
     assert wrong["tier1_passed"] == 0
 
 
@@ -98,7 +98,7 @@ def test_harness_records_judge_scores(tmp_path):
         st, _golden(tmp_path, 3), lambda: _deps(3), judge=judge, repo_root=tmp_path,
         enforce_budget=False,
     )
-    run = [r for r in st.list_eval_runs() if r["id"] == eval_id][0]
+    run = next(r for r in st.list_eval_runs() if r["id"] == eval_id)
     assert run["judge_avg"] == 4.0
     row = st.eval_results(eval_id)[0]
     assert json.loads(row["judge"])["clarity"] == 4
@@ -191,8 +191,8 @@ def test_config_snapshot_hash_distinguishes_router_and_judge_model(tmp_path):
     truth), not a re-read of settings().model_for.
     """
     st = Store(tmp_path / "t.db")
-    models_a, judge_a = _models(router="gpt-4o-mini")
-    models_b, judge_b = _models(router="gpt-4o")  # only the router differs
+    models_a, _judge_a = _models(router="gpt-4o-mini")
+    models_b, _judge_b = _models(router="gpt-4o")  # only the router differs
 
     eval_id_a = run_eval(
         st, _golden(tmp_path, 3), lambda: _deps(3), label="a", repo_root=tmp_path,

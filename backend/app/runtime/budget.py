@@ -135,7 +135,7 @@ class AgentBudget:
     run_id: str | None = None
 
     @classmethod
-    def for_role(cls, role: str, run_id: str | None = None) -> "AgentBudget":
+    def for_role(cls, role: str, run_id: str | None = None) -> AgentBudget:
         cfg = settings()
         llm_caps = {
             "planner": 2,

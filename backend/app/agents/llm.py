@@ -8,8 +8,8 @@ wires the real models with structured output and one repair retry.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 from langchain_core.messages import BaseMessage, HumanMessage
 from pydantic import BaseModel
@@ -88,7 +88,7 @@ def _structured_fn(role: str, schema: type[BaseModel], model: str | None = None)
     return call
 
 
-def _real_compose(model: str | None = None) -> "ComposeFn":
+def _real_compose(model: str | None = None) -> ComposeFn:
     from langchain_openai import ChatOpenAI
 
     cfg = settings()
@@ -132,7 +132,7 @@ class GraphDeps:
             self.run_code = run_code
 
     @classmethod
-    def default(cls, models: dict[str, str] | None = None) -> "GraphDeps":
+    def default(cls, models: dict[str, str] | None = None) -> GraphDeps:
         """Wire the real models. `models`, if given, pins each role to an exact model
         id (used by the M5 study to compare configs), bypassing `cheap_mode`'s
         collapse — see `_structured_fn`/`_real_compose`'s `model or cfg.model_for(role)`.

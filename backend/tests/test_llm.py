@@ -1,5 +1,7 @@
 """Malformed structured output gets exactly one repair retry (plan §3.1)."""
 
+from typing import ClassVar
+
 import pytest
 from pydantic import ValidationError
 
@@ -9,7 +11,7 @@ from app.agents.schemas import AnalystTurn
 
 def raw(tokens=(10, 5)):
     class Raw:
-        usage_metadata = {"input_tokens": tokens[0], "output_tokens": tokens[1]}
+        usage_metadata: ClassVar = {"input_tokens": tokens[0], "output_tokens": tokens[1]}
 
     return Raw()
 

@@ -1,5 +1,7 @@
 """Price table: deliberately hardcoded, prefix-matched, unknown models cost 0."""
 
+from typing import ClassVar
+
 import pytest
 
 from app.agents.llm import LLMUsage, _usage_of
@@ -24,8 +26,8 @@ def test_unknown_model_costs_zero():
 
 def test_usage_of_extracts_model_name():
     class Raw:
-        usage_metadata = {"input_tokens": 7, "output_tokens": 3}
-        response_metadata = {"model_name": "gpt-4o-mini-2024-07-18"}
+        usage_metadata: ClassVar = {"input_tokens": 7, "output_tokens": 3}
+        response_metadata: ClassVar = {"model_name": "gpt-4o-mini-2024-07-18"}
 
     usage = _usage_of(Raw())
     assert usage == LLMUsage(tokens_in=7, tokens_out=3, model="gpt-4o-mini-2024-07-18")

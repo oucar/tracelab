@@ -48,7 +48,7 @@ def test_sink_receives_every_event_at_emit_time():
 
     bus = EventBus()
     seen: list[str] = []
-    sink = lambda e: seen.append(e.type.value)  # noqa: E731
+    sink = lambda e: seen.append(e.type.value)
     bus.add_sink(sink)
     bus.add_sink(sink)  # double registration is a no-op
 

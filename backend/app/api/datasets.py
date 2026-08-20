@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api/datasets", tags=["datasets"])
 
 def profile_dataframe(df: pd.DataFrame) -> dict:
     return {
-        "rows": int(len(df)),
+        "rows": len(df),
         "columns": [
             {
                 "name": str(col),
